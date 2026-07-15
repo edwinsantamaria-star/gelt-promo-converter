@@ -295,9 +295,9 @@ document.addEventListener('DOMContentLoaded', function() {
         tc.imageSmoothingEnabled = true; tc.imageSmoothingQuality = 'high';
         tc.drawImage(img, 0, 0);
         var cw = img.width, ch = img.height;
-        while (cw > finalW * 2 || ch > finalH * 2) {
-          var sw = Math.max(Math.round(cw / 2), finalW);
-          var sh = Math.max(Math.round(ch / 2), finalH);
+        while (cw > finalW * 2 && ch > finalH * 2) {
+          var sw = Math.round(cw / 2);
+          var sh = Math.round(ch / 2);
           var st = document.createElement('canvas');
           st.width = sw; st.height = sh;
           var sc = st.getContext('2d');
