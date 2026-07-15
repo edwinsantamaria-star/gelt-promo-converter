@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (files.length === 1) {
       showOriginalPreview(files[0]);
-      previewRes.src = '';
+      previewRes.removeAttribute('src');
       previewArea.classList.add('visible');
       batchList.classList.remove('visible');
       fileInfo.textContent = '1 archivo: ' + files[0].name;
@@ -458,7 +458,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setStatus('', '');
     var old = origWrap.querySelector('.preview-placeholder');
     if (old) old.remove();
-    previewOrig.style.display = ''; previewOrig.src = ''; previewRes.src = '';
+    previewOrig.style.display = ''; previewOrig.removeAttribute('src'); previewRes.removeAttribute('src');
   };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
