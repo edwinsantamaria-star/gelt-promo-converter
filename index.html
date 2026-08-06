@@ -94,7 +94,7 @@
   <p class="subtitle">Sube una o varias imágenes y las convertimos automáticamente al formato de la app.</p>
 
   <div class="spec-pills">
-    <span class="pill">📐 300 × 350 px</span>
+    <span class="pill">📐 600 × 700 px (2x)</span>
     <span class="pill">🖼 WebP</span>
     <span class="pill">✂️ Sin fondo</span>
   </div>
@@ -121,7 +121,7 @@
       </div>
     </div>
     <div class="preview-box">
-      <div class="preview-label">Resultado · 300×350 WebP</div>
+      <div class="preview-label">Resultado · 600×700 WebP</div>
       <div class="preview-img-wrap">
         <img id="previewResult" src="" alt="Resultado" />
       </div>
@@ -142,7 +142,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 
-  var TARGET_W = 300, TARGET_H = 350;
+  var TARGET_W = 600, TARGET_H = 700; // 2x de la spec de app (300×350) para mayor nitidez
   var selectedFiles = [], resultBlobs = [];
 
   var dropZone     = document.getElementById('dropZone');
@@ -415,7 +415,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setStatus('info', pre + 'Redimensionando a 300×350…');
         setProgress(95, 'Redimensionando…');
         var result  = await resizeToWebP(noBg);
-        var outName = file.name.replace(/\.[^.]+$/, '') + '.webp';
+        var outName = 'ImgPromo_' + file.name.replace(/\.[^.]+$/, '') + '.webp';
         resultBlobs.push({ name: outName, blob: result });
 
         if (isMulti) setItemStatus(i, '✅');

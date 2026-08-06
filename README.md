@@ -9,10 +9,11 @@ Hoy cada imagen de promo (fotos de producto que llegan de marcas/proveedores en 
 ## Qué hace
 
 1. **Elimina el fondo** de la imagen automáticamente (IA de segmentación, corre en el propio navegador).
-2. **Redimensiona y centra** el producto a **300 × 350 px**, el formato estándar de la app.
+2. **Redimensiona y centra** el producto a **600 × 700 px** (2x del formato estándar de la app, 300 × 350, para que se vea nítido en pantallas de alta densidad).
 3. **Aplica nitidez** (unsharp mask) para compensar la pérdida de detalle del redimensionado.
 4. **Exporta a WebP** con máxima calidad, listo para subir.
 5. Soporta **conversión en lote** (varias imágenes a la vez, con estado individual por archivo).
+6. **Nombra el archivo de salida** con el prefijo `ImgPromo_` seguido del nombre original.
 
 ## Formatos de entrada aceptados
 
