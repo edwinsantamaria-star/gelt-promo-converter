@@ -325,23 +325,27 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Unsharp mask: amount controla la fuerza (1.5 = alta nitidez sin halos)
+  // radius escala con la resolución de salida: a mayor TARGET_W/H, mayor radio de blur necesario
+  // para que el realce siga afectando al mismo detalle relativo (evita que el resultado salga blando en 2x).
   function sharpen(ctx, w, h) {
     var id  = ctx.getImageData(0, 0, w, h);
     var src = id.data;
     var amount = 0.7; // natural: 0.3-0.5 · moderado: 0.6-0.8 · fuerte: 1.0+
+    var radius = Math.max(1, Math.round(w / 300)); // 1 a 300px de ancho, 2 a 600px, etc.
 
-    // Paso 1: blur gaussiano 3×3 aproximado
+    // Paso 1: blur tipo caja (radius×radius) — aproxima el gaussiano anterior, generalizado a cualquier radio
     var blur = new Float32Array(src.length);
-    var kg = [1,2,1, 2,4,2, 1,2,1]; // suma = 16
-    for (var y = 1; y < h-1; y++) {
-      for (var x = 1; x < w-1; x++) {
+    var side = radius * 2 + 1;
+    var norm = side * side;
+    for (var y = radius; y < h-radius; y++) {
+      for (var x = radius; x < w-radius; x++) {
         var i = (y*w+x)*4;
         for (var c = 0; c < 3; c++) {
           var v = 0;
-          for (var ky=-1; ky<=1; ky++)
-            for (var kx=-1; kx<=1; kx++)
-              v += src[((y+ky)*w+(x+kx))*4+c] * kg[(ky+1)*3+(kx+1)];
-          blur[i+c] = v / 16;
+          for (var ky=-radius; ky<=radius; ky++)
+            for (var kx=-radius; kx<=radius; kx++)
+              v += src[((y+ky)*w+(x+kx))*4+c];
+          blur[i+c] = v / norm;
         }
         blur[i+3] = src[i+3];
       }
