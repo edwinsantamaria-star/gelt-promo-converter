@@ -99,6 +99,11 @@
     <span class="pill">✂️ Sin fondo</span>
   </div>
 
+  <label style="font-size:11px;color:#999;display:flex;align-items:center;gap:6px;margin-bottom:16px;cursor:pointer;">
+    <input type="checkbox" id="debugMode" style="cursor:pointer;" />
+    🔍 Modo debug: ver salida IA sin procesar (diagnóstico temporal)
+  </label>
+
   <div class="drop-zone" id="dropZone">
     <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.avif,.tiff,.tif,.heic,.heif" multiple />
     <div class="drop-icon">📁</div>
@@ -125,6 +130,13 @@
       <div class="preview-img-wrap">
         <img id="previewResult" src="" alt="Resultado" />
       </div>
+    </div>
+  </div>
+
+  <div class="preview-box" id="debugBox" style="display:none;margin-top:16px;">
+    <div class="preview-label">🔍 Salida IA sin procesar (antes de redimensionar/nitidez)</div>
+    <div class="preview-img-wrap">
+      <img id="previewDebug" src="" alt="Salida IA sin procesar" />
     </div>
   </div>
 
@@ -156,6 +168,9 @@ document.addEventListener('DOMContentLoaded', function() {
   var previewOrig  = document.getElementById('previewOriginal');
   var previewRes   = document.getElementById('previewResult');
   var origWrap     = document.getElementById('origWrap');
+  var debugMode    = document.getElementById('debugMode');
+  var debugBox     = document.getElementById('debugBox');
+  var previewDebug = document.getElementById('previewDebug');
   var progressWrap = document.getElementById('progressWrap');
   var progressFill = document.getElementById('progressFill');
   var progressText = document.getElementById('progressText');
@@ -178,6 +193,8 @@ document.addEventListener('DOMContentLoaded', function() {
     btnDownload.style.display = 'none';
     btnReset.style.display = 'inline-flex';
     setStatus('', '');
+    debugBox.style.display = 'none';
+    previewDebug.removeAttribute('src');
 
     if (files.length === 1) {
       showOriginalPreview(files[0]);
@@ -416,7 +433,12 @@ document.addEventListener('DOMContentLoaded', function() {
         setStatus('info', pre + 'Eliminando fondo de <strong>' + file.name + '</strong>…');
         var noBg = await removeBackground(forAI, config);
 
-        setStatus('info', pre + 'Redimensionando a 300×350…');
+        if (debugMode.checked && !isMulti) {
+          previewDebug.src = URL.createObjectURL(noBg);
+          debugBox.style.display = '';
+        }
+
+        setStatus('info', pre + 'Redimensionando a 600×700…');
         setProgress(95, 'Redimensionando…');
         var result  = await resizeToWebP(noBg);
         var outName = 'ImgPromo_' + file.name.replace(/\.[^.]+$/, '') + '.webp';
@@ -463,6 +485,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var old = origWrap.querySelector('.preview-placeholder');
     if (old) old.remove();
     previewOrig.style.display = ''; previewOrig.removeAttribute('src'); previewRes.removeAttribute('src');
+    debugBox.style.display = 'none'; previewDebug.removeAttribute('src');
   };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
