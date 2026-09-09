@@ -376,8 +376,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Combinar: conservar (opaco) si la IA dice producto O si el relleno no lo alcanzó
+        // De paso, calculamos el bounding box del producto para recortar el margen sobrante.
         var AI_ALPHA_THRESHOLD = 128;
         var out = new Uint8ClampedArray(total * 4);
+        var minX = w, minY = h, maxX = -1, maxY = -1;
         for (var idx = 0; idx < total; idx++) {
           var i4 = idx * 4;
           var aiForeground = aiData[i4 + 3] > AI_ALPHA_THRESHOLD;
@@ -387,11 +389,31 @@ document.addEventListener('DOMContentLoaded', function() {
           out[i4 + 1] = origData[i4 + 1];
           out[i4 + 2] = origData[i4 + 2];
           out[i4 + 3] = keep ? 255 : 0;
+          if (keep) {
+            var kx = idx % w, ky = (idx / w) | 0;
+            if (kx < minX) minX = kx; if (kx > maxX) maxX = kx;
+            if (ky < minY) minY = ky; if (ky > maxY) maxY = ky;
+          }
         }
 
-        var outCanvas = document.createElement('canvas');
-        outCanvas.width = w; outCanvas.height = h;
-        outCanvas.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
+        var fullCanvas = document.createElement('canvas');
+        fullCanvas.width = w; fullCanvas.height = h;
+        fullCanvas.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
+
+        // Recortar al contenido real del producto (con un pequeño margen de aire)
+        // para que rellene el lienzo final en vez de conservar el aire de la foto original.
+        var outCanvas = fullCanvas;
+        if (maxX >= minX && maxY >= minY) {
+          var bboxW = maxX - minX + 1, bboxH = maxY - minY + 1;
+          var pad = Math.round(0.04 * Math.max(bboxW, bboxH));
+          var cropX = Math.max(0, minX - pad), cropY = Math.max(0, minY - pad);
+          var cropW = Math.min(w, maxX + pad + 1) - cropX;
+          var cropH = Math.min(h, maxY + pad + 1) - cropY;
+          outCanvas = document.createElement('canvas');
+          outCanvas.width = cropW; outCanvas.height = cropH;
+          outCanvas.getContext('2d').drawImage(fullCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        }
+
         outCanvas.toBlob(function(b) { b ? resolve(b) : reject(new Error('refineMaskWithFloodFill toBlob failed')); }, 'image/png');
       }
 
