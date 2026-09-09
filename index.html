@@ -295,6 +295,115 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // ── Corrección híbrida de máscara: IA + relleno de fondo por color ───────
+  // La IA a veces "come" zonas del producto cuando su color se parece al
+  // fondo blanco de estudio (bajo contraste). Para corregirlo, además de la
+  // máscara de la IA calculamos qué píxeles son alcanzables por color desde
+  // los bordes de la imagen original (relleno tipo "cubo de pintura" con
+  // tolerancia). Un píxel se conserva como producto si la IA lo reconoce
+  // como tal, O si el relleno de fondo no llegó hasta él (zona "isla" no
+  // conectada al fondo real) — así cada técnica cubre el punto débil de la
+  // otra, priorizando NO perder parte del producto.
+  function refineMaskWithFloodFill(origBlob, aiBlob) {
+    return new Promise(function(resolve, reject) {
+      var imgOrig = new Image(), imgAI = new Image();
+      var loaded = 0, failed = false;
+
+      function onError(e) { if (!failed) { failed = true; reject(e); } }
+
+      function onBothLoaded() {
+        var w = imgOrig.width, h = imgOrig.height;
+
+        var co = document.createElement('canvas'); co.width = w; co.height = h;
+        var ctxO = co.getContext('2d');
+        ctxO.drawImage(imgOrig, 0, 0);
+        var origData = ctxO.getImageData(0, 0, w, h).data;
+
+        var ca = document.createElement('canvas'); ca.width = w; ca.height = h;
+        var ctxA = ca.getContext('2d');
+        ctxA.drawImage(imgAI, 0, 0, w, h);
+        var aiData = ctxA.getImageData(0, 0, w, h).data;
+
+        // Relleno de fondo (BFS) sembrado desde todos los bordes. Cada píxel se compara
+        // contra un color de referencia FIJO (muestreado del propio borde), no contra su
+        // vecino inmediato — así un degradado suave de antialiasing (frecuente en bordes
+        // curvos, donde el borde es casi horizontal/vertical) no sirve de "puente" para que
+        // el relleno se cuele paso a paso hacia el interior del producto.
+        var TOL = 26; // distancia euclídea RGB tolerada frente al color de referencia
+        var total = w * h;
+        var visited = new Uint8Array(total);
+        var queue = new Int32Array(total);
+        var qHead = 0, qTail = 0;
+
+        var refR = 0, refG = 0, refB = 0, refCount = 0;
+        for (var bx = 0; bx < w; bx++) {
+          addRefSample(bx, 0); addRefSample(bx, h - 1);
+        }
+        for (var by = 0; by < h; by++) {
+          addRefSample(0, by); addRefSample(w - 1, by);
+        }
+        function addRefSample(x, y) {
+          var i = (y * w + x) * 4;
+          refR += origData[i]; refG += origData[i+1]; refB += origData[i+2]; refCount++;
+        }
+        refR /= refCount; refG /= refCount; refB /= refCount;
+
+        function colorDistToRef(i) {
+          var dr = origData[i]   - refR;
+          var dg = origData[i+1] - refG;
+          var db = origData[i+2] - refB;
+          return Math.sqrt(dr*dr + dg*dg + db*db);
+        }
+
+        for (var x = 0; x < w; x++) {
+          var top = x, bottom = (h - 1) * w + x;
+          if (!visited[top])    { visited[top] = 1;    queue[qTail++] = top; }
+          if (!visited[bottom]) { visited[bottom] = 1; queue[qTail++] = bottom; }
+        }
+        for (var y = 0; y < h; y++) {
+          var left = y * w, right = y * w + (w - 1);
+          if (!visited[left])  { visited[left] = 1;  queue[qTail++] = left; }
+          if (!visited[right]) { visited[right] = 1; queue[qTail++] = right; }
+        }
+
+        while (qHead < qTail) {
+          var p  = queue[qHead++];
+          var px = p % w, py = (p / w) | 0;
+          if (px > 0)   { var n1 = p - 1; if (!visited[n1] && colorDistToRef(n1*4) < TOL) { visited[n1] = 1; queue[qTail++] = n1; } }
+          if (px < w-1) { var n2 = p + 1; if (!visited[n2] && colorDistToRef(n2*4) < TOL) { visited[n2] = 1; queue[qTail++] = n2; } }
+          if (py > 0)   { var n3 = p - w; if (!visited[n3] && colorDistToRef(n3*4) < TOL) { visited[n3] = 1; queue[qTail++] = n3; } }
+          if (py < h-1) { var n4 = p + w; if (!visited[n4] && colorDistToRef(n4*4) < TOL) { visited[n4] = 1; queue[qTail++] = n4; } }
+        }
+
+        // Combinar: conservar (opaco) si la IA dice producto O si el relleno no lo alcanzó
+        var AI_ALPHA_THRESHOLD = 128;
+        var out = new Uint8ClampedArray(total * 4);
+        for (var idx = 0; idx < total; idx++) {
+          var i4 = idx * 4;
+          var aiForeground = aiData[i4 + 3] > AI_ALPHA_THRESHOLD;
+          var reachedAsBg  = visited[idx] === 1;
+          var keep = aiForeground || !reachedAsBg;
+          out[i4]     = origData[i4];
+          out[i4 + 1] = origData[i4 + 1];
+          out[i4 + 2] = origData[i4 + 2];
+          out[i4 + 3] = keep ? 255 : 0;
+        }
+
+        var outCanvas = document.createElement('canvas');
+        outCanvas.width = w; outCanvas.height = h;
+        outCanvas.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
+        outCanvas.toBlob(function(b) { b ? resolve(b) : reject(new Error('refineMaskWithFloodFill toBlob failed')); }, 'image/png');
+      }
+
+      imgOrig.onload = function() { if (++loaded === 2) onBothLoaded(); };
+      imgAI.onload   = function() { if (++loaded === 2) onBothLoaded(); };
+      imgOrig.onerror = onError;
+      imgAI.onerror   = onError;
+      imgOrig.src = URL.createObjectURL(origBlob);
+      imgAI.src   = URL.createObjectURL(aiBlob);
+    });
+  }
+
   function resizeToWebP(blob) {
     return new Promise(function(resolve, reject) {
       var img = new Image();
@@ -437,6 +546,11 @@ document.addEventListener('DOMContentLoaded', function() {
           previewDebug.src = URL.createObjectURL(noBg);
           debugBox.style.display = '';
         }
+
+        // 4. Corregir la máscara: recuperar zonas del producto que la IA
+        //    haya podido confundir con el fondo (bajo contraste)
+        setStatus('info', pre + 'Afinando recorte…');
+        noBg = await refineMaskWithFloodFill(forAI, noBg);
 
         setStatus('info', pre + 'Redimensionando a 600×700…');
         setProgress(95, 'Redimensionando…');
