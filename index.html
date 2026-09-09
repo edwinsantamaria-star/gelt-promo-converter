@@ -249,7 +249,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var _removeBg = null;
   async function getRemoveBg() {
     if (_removeBg) return _removeBg;
-    var mod = await import('https://esm.sh/@imgly/background-removal@1.4.5');
+    var mod = await import('https://esm.sh/@imgly/background-removal@1.7.0');
     _removeBg = mod.removeBackground;
     return _removeBg;
   }
@@ -401,7 +401,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     var config = {
-      publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/',
+      publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/',
       output: { quality: 1, format: 'image/png' },
       progress: function(key, current, total) {
         var pct = total > 0 ? Math.round((current / total) * 100) : 0;
