@@ -402,6 +402,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var config = {
       publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/',
+      model: 'isnet', // precisión completa (vs isnet_fp16 por defecto) — mejora el recorte en bordes de bajo contraste
       output: { quality: 1, format: 'image/png' },
       progress: function(key, current, total) {
         var pct = total > 0 ? Math.round((current / total) * 100) : 0;
