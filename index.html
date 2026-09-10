@@ -100,11 +100,14 @@
   </div>
 
   <div style="border:1px solid #eee;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
-    <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:8px;">🔍 Encaje en el marco 600×700</label>
-    <label style="font-size:11px;color:#666;display:flex;align-items:center;gap:8px;">
+    <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:2px;">📐 ¿Cuánto debe rellenar el producto el marco?</label>
+    <div style="font-size:11px;color:#999;margin-bottom:8px;">En fotos anchas (como una caja + bol) puede sobrar aire arriba/abajo — este control decide si se prefiere dejar ese aire o recortar un poco los bordes del producto para rellenarlo.</div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:#aaa;">
+      <span>Sin recortar</span>
       <input type="range" id="fitZoom" min="0" max="100" value="0" style="flex:1;" />
-      <span id="fitZoomLabel" style="white-space:nowrap;min-width:150px;">0% · producto completo</span>
-    </label>
+      <span>Sin huecos</span>
+    </div>
+    <div id="fitZoomLabel" style="font-size:11px;color:#666;margin-top:6px;">Nunca se recorta el producto (puede quedar algo de aire alrededor)</div>
   </div>
 
   <div style="border:1px solid #eee;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
@@ -215,8 +218,11 @@ document.addEventListener('DOMContentLoaded', function() {
   // ── Encaje / zoom ─────────────────────────────────────────────────────────
   fitZoom.addEventListener('input', function() {
     var v = parseInt(fitZoom.value, 10);
-    var etiqueta = v === 0 ? 'producto completo' : v === 100 ? 'rellena el marco' : 'intermedio';
-    fitZoomLabel.textContent = v + '% · ' + etiqueta;
+    var texto;
+    if (v === 0)        texto = 'Nunca se recorta el producto (puede quedar algo de aire alrededor)';
+    else if (v === 100) texto = 'Rellena el marco sin huecos (puede recortar un poco los bordes del producto)';
+    else                texto = 'Punto intermedio (' + v + '%): algo de recorte, algo de aire';
+    fitZoomLabel.textContent = texto;
   });
 
   // ── Sello / badge ─────────────────────────────────────────────────────────
