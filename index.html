@@ -179,6 +179,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   var TARGET_W = 600, TARGET_H = 700; // 2x de la spec de app (300×350) para mayor nitidez
   var selectedFiles = [], resultBlobs = [];
+  var lastRefinedBlob = null; // resultado sin fondo del último archivo único convertido, para previsualizar encaje/sello en vivo sin repetir la IA
 
   var dropZone     = document.getElementById('dropZone');
   var fileInput    = document.getElementById('fileInput');
@@ -215,6 +216,21 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   fileInput.addEventListener('change', function() { handleFiles([].slice.call(fileInput.files)); });
 
+  // ── Previsualización en vivo (encaje/sello) ─────────────────────────────────
+  // Vuelve a generar el resultado a partir del recorte sin fondo ya calculado,
+  // sin repetir la parte lenta (IA). Solo tiene sentido con un único archivo.
+  var livePreviewTimer = null;
+  function updateLivePreview() {
+    if (!lastRefinedBlob || selectedFiles.length !== 1) return;
+    clearTimeout(livePreviewTimer);
+    livePreviewTimer = setTimeout(function() {
+      resizeToWebP(lastRefinedBlob).then(function(blob) {
+        previewRes.src = URL.createObjectURL(blob);
+        if (resultBlobs.length === 1) resultBlobs[0].blob = blob;
+      }).catch(function(err) { console.error(err); });
+    }, 80);
+  }
+
   // ── Encaje / zoom ─────────────────────────────────────────────────────────
   fitZoom.addEventListener('input', function() {
     var v = parseInt(fitZoom.value, 10);
@@ -223,6 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
     else if (v === 100) texto = 'Rellena el marco sin huecos (puede recortar un poco los bordes del producto)';
     else                texto = 'Punto intermedio (' + v + '%): algo de recorte, algo de aire';
     fitZoomLabel.textContent = texto;
+    updateLivePreview();
   });
 
   // ── Sello / badge ─────────────────────────────────────────────────────────
@@ -234,22 +251,29 @@ document.addEventListener('DOMContentLoaded', function() {
       stampImg = img;
       stampInfo.textContent = '✅ ' + f.name;
       stampControls.style.display = 'flex';
+      updateLivePreview();
     };
     img.onerror = function() { stampInfo.textContent = '❌ No se pudo cargar el sello'; };
     img.src = URL.createObjectURL(f);
   });
-  stampSize.addEventListener('input', function() { stampSizeLabel.textContent = stampSize.value + '%'; });
+  stampSize.addEventListener('input', function() {
+    stampSizeLabel.textContent = stampSize.value + '%';
+    updateLivePreview();
+  });
+  stampPosition.addEventListener('change', updateLivePreview);
   btnRemoveStamp.addEventListener('click', function() {
     stampImg = null;
     stampInput.value = '';
     stampInfo.textContent = '';
     stampControls.style.display = 'none';
+    updateLivePreview();
   });
 
   // ── Selección ─────────────────────────────────────────────────────────────
   function handleFiles(files) {
     if (!files.length) return;
     selectedFiles = files; resultBlobs = [];
+    lastRefinedBlob = null;
     btnConvert.disabled = false;
     btnDownload.style.display = 'none';
     btnReset.style.display = 'inline-flex';
@@ -651,6 +675,7 @@ document.addEventListener('DOMContentLoaded', function() {
         //    haya podido confundir con el fondo (bajo contraste)
         setStatus('info', pre + 'Afinando recorte…');
         noBg = await refineMaskWithFloodFill(forAI, noBg);
+        if (!isMulti) lastRefinedBlob = noBg;
 
         setStatus('info', pre + 'Redimensionando a 600×700…');
         setProgress(95, 'Redimensionando…');
@@ -689,6 +714,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // ── Reset ─────────────────────────────────────────────────────────────────
   window.resetTool = function() {
     selectedFiles = []; resultBlobs = [];
+    lastRefinedBlob = null;
     fileInput.value = ''; fileInfo.textContent = '';
     previewArea.classList.remove('visible');
     batchList.classList.remove('visible'); batchList.innerHTML = '';
