@@ -104,6 +104,30 @@
     🔍 Modo debug: ver salida IA sin procesar (diagnóstico temporal)
   </label>
 
+  <div style="border:1px solid #eee;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+    <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:8px;">
+      🏷️ Sello / badge (opcional) — se aplica a todas las conversiones hasta que lo quites
+    </label>
+    <input type="file" id="stampInput" accept="image/*" style="font-size:12px;" />
+    <span id="stampInfo" style="font-size:11px;color:#999;margin-left:8px;"></span>
+
+    <div id="stampControls" style="display:none;margin-top:12px;flex-direction:column;gap:10px;">
+      <label style="font-size:11px;color:#666;display:flex;align-items:center;gap:8px;">
+        Posición:
+        <select id="stampPosition" style="font-size:11px;padding:2px 4px;">
+          <option value="bottom-right" selected>Abajo derecha</option>
+          <option value="bottom-left">Abajo izquierda</option>
+          <option value="top-right">Arriba derecha</option>
+          <option value="top-left">Arriba izquierda</option>
+        </select>
+      </label>
+      <label style="font-size:11px;color:#666;display:flex;align-items:center;gap:8px;">
+        Tamaño: <input type="range" id="stampSize" min="15" max="60" value="38" style="flex:1;" /> <span id="stampSizeLabel">38%</span>
+      </label>
+      <button type="button" id="btnRemoveStamp" class="btn btn-secondary" style="flex:none;align-self:flex-start;padding:6px 14px;font-size:12px;">✕ Quitar sello</button>
+    </div>
+  </div>
+
   <div class="drop-zone" id="dropZone">
     <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.avif,.tiff,.tif,.heic,.heif" multiple />
     <div class="drop-icon">📁</div>
@@ -171,6 +195,14 @@ document.addEventListener('DOMContentLoaded', function() {
   var debugMode    = document.getElementById('debugMode');
   var debugBox     = document.getElementById('debugBox');
   var previewDebug = document.getElementById('previewDebug');
+  var stampInput    = document.getElementById('stampInput');
+  var stampInfo     = document.getElementById('stampInfo');
+  var stampControls = document.getElementById('stampControls');
+  var stampPosition = document.getElementById('stampPosition');
+  var stampSize     = document.getElementById('stampSize');
+  var stampSizeLabel= document.getElementById('stampSizeLabel');
+  var btnRemoveStamp= document.getElementById('btnRemoveStamp');
+  var stampImg = null; // Image cargada por el usuario, persiste entre conversiones
   var progressWrap = document.getElementById('progressWrap');
   var progressFill = document.getElementById('progressFill');
   var progressText = document.getElementById('progressText');
@@ -184,6 +216,27 @@ document.addEventListener('DOMContentLoaded', function() {
     handleFiles([].slice.call(e.dataTransfer.files));
   });
   fileInput.addEventListener('change', function() { handleFiles([].slice.call(fileInput.files)); });
+
+  // ── Sello / badge ─────────────────────────────────────────────────────────
+  stampInput.addEventListener('change', function() {
+    var f = stampInput.files[0];
+    if (!f) return;
+    var img = new Image();
+    img.onload = function() {
+      stampImg = img;
+      stampInfo.textContent = '✅ ' + f.name;
+      stampControls.style.display = 'flex';
+    };
+    img.onerror = function() { stampInfo.textContent = '❌ No se pudo cargar el sello'; };
+    img.src = URL.createObjectURL(f);
+  });
+  stampSize.addEventListener('input', function() { stampSizeLabel.textContent = stampSize.value + '%'; });
+  btnRemoveStamp.addEventListener('click', function() {
+    stampImg = null;
+    stampInput.value = '';
+    stampInfo.textContent = '';
+    stampControls.style.display = 'none';
+  });
 
   // ── Selección ─────────────────────────────────────────────────────────────
   function handleFiles(files) {
@@ -463,6 +516,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         sharpen(ctx, TARGET_W, TARGET_H);
 
+        if (stampImg) drawStamp(ctx, TARGET_W, TARGET_H);
+
         out.toBlob(function(b) {
           b ? resolve(b) : reject(new Error('toBlob failed'));
         }, 'image/webp', 1.0);
@@ -508,6 +563,23 @@ document.addEventListener('DOMContentLoaded', function() {
       out[j+3] = src[j+3];
     }
     id.data.set(out); ctx.putImageData(id, 0, 0);
+  }
+
+  // Dibuja el sello/badge cargado por el usuario sobre el lienzo final, en la
+  // esquina elegida, respetando su proporción original.
+  function drawStamp(ctx, w, h) {
+    var scalePct = parseInt(stampSize.value, 10) / 100;
+    var sw = Math.round(w * scalePct);
+    var sh = Math.round(sw * (stampImg.height / stampImg.width));
+    var margin = Math.round(w * 0.02);
+    var sx, sy;
+    switch (stampPosition.value) {
+      case 'bottom-left': sx = margin;         sy = h - sh - margin; break;
+      case 'top-right':   sx = w - sw - margin; sy = margin;         break;
+      case 'top-left':    sx = margin;         sy = margin;         break;
+      default:             sx = w - sw - margin; sy = h - sh - margin; // bottom-right
+    }
+    ctx.drawImage(stampImg, sx, sy, sw, sh);
   }
 
   // ── Convertir ─────────────────────────────────────────────────────────────
