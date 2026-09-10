@@ -592,7 +592,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     setProgress(100, '¡Listo!');
     if (resultBlobs.length > 0) {
-      setStatus('success', '✅ ' + resultBlobs.length + ' imagen' + (resultBlobs.length > 1 ? 's convertidas' : ' convertida') + ' correctamente.');
+      setStatus('success', '✅ ' + resultBlobs.length + ' ' + (resultBlobs.length > 1 ? 'imágenes convertidas' : 'imagen convertida') + ' correctamente.');
       btnDownload.style.display = 'inline-flex';
     }
     btnConvert.disabled = false;
