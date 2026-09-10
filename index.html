@@ -100,6 +100,14 @@
   </div>
 
   <div style="border:1px solid #eee;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+    <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:8px;">🔍 Encaje en el marco 600×700</label>
+    <label style="font-size:11px;color:#666;display:flex;align-items:center;gap:8px;">
+      <input type="range" id="fitZoom" min="0" max="100" value="0" style="flex:1;" />
+      <span id="fitZoomLabel" style="white-space:nowrap;min-width:150px;">0% · producto completo</span>
+    </label>
+  </div>
+
+  <div style="border:1px solid #eee;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
     <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:8px;">
       🏷️ Sello / badge (opcional) — se aplica a todas las conversiones hasta que lo quites
     </label>
@@ -180,6 +188,8 @@ document.addEventListener('DOMContentLoaded', function() {
   var previewOrig  = document.getElementById('previewOriginal');
   var previewRes   = document.getElementById('previewResult');
   var origWrap     = document.getElementById('origWrap');
+  var fitZoom      = document.getElementById('fitZoom');
+  var fitZoomLabel = document.getElementById('fitZoomLabel');
   var stampInput    = document.getElementById('stampInput');
   var stampInfo     = document.getElementById('stampInfo');
   var stampControls = document.getElementById('stampControls');
@@ -201,6 +211,13 @@ document.addEventListener('DOMContentLoaded', function() {
     handleFiles([].slice.call(e.dataTransfer.files));
   });
   fileInput.addEventListener('change', function() { handleFiles([].slice.call(fileInput.files)); });
+
+  // ── Encaje / zoom ─────────────────────────────────────────────────────────
+  fitZoom.addEventListener('input', function() {
+    var v = parseInt(fitZoom.value, 10);
+    var etiqueta = v === 0 ? 'producto completo' : v === 100 ? 'rellena el marco' : 'intermedio';
+    fitZoomLabel.textContent = v + '% · ' + etiqueta;
+  });
 
   // ── Sello / badge ─────────────────────────────────────────────────────────
   stampInput.addEventListener('change', function() {
@@ -466,7 +483,12 @@ document.addEventListener('DOMContentLoaded', function() {
     return new Promise(function(resolve, reject) {
       var img = new Image();
       img.onload = function() {
-        var scale  = Math.min(TARGET_W / img.width, TARGET_H / img.height);
+        // "Encaje": 0% = ajustar completo dentro del marco (puede dejar aire), 100% = rellenar
+        // el marco del todo (puede recortar los bordes del producto). Interpolamos entre ambos.
+        var containScale = Math.min(TARGET_W / img.width, TARGET_H / img.height);
+        var coverScale   = Math.max(TARGET_W / img.width, TARGET_H / img.height);
+        var zoomPct = parseInt(fitZoom.value, 10) / 100;
+        var scale = containScale + (coverScale - containScale) * zoomPct;
         var finalW = Math.round(img.width  * scale);
         var finalH = Math.round(img.height * scale);
         var offX   = Math.round((TARGET_W - finalW) / 2);
