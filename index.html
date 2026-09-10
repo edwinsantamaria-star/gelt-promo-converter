@@ -99,11 +99,6 @@
     <span class="pill">✂️ Sin fondo</span>
   </div>
 
-  <label style="font-size:11px;color:#999;display:flex;align-items:center;gap:6px;margin-bottom:16px;cursor:pointer;">
-    <input type="checkbox" id="debugMode" style="cursor:pointer;" />
-    🔍 Modo debug: ver salida IA sin procesar (diagnóstico temporal)
-  </label>
-
   <div style="border:1px solid #eee;border-radius:12px;padding:14px 16px;margin-bottom:16px;">
     <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:8px;">
       🏷️ Sello / badge (opcional) — se aplica a todas las conversiones hasta que lo quites
@@ -157,13 +152,6 @@
     </div>
   </div>
 
-  <div class="preview-box" id="debugBox" style="display:none;margin-top:16px;">
-    <div class="preview-label">🔍 Salida IA sin procesar (antes de redimensionar/nitidez)</div>
-    <div class="preview-img-wrap">
-      <img id="previewDebug" src="" alt="Salida IA sin procesar" />
-    </div>
-  </div>
-
   <div class="batch-list" id="batchList"></div>
 
   <div class="actions">
@@ -192,9 +180,6 @@ document.addEventListener('DOMContentLoaded', function() {
   var previewOrig  = document.getElementById('previewOriginal');
   var previewRes   = document.getElementById('previewResult');
   var origWrap     = document.getElementById('origWrap');
-  var debugMode    = document.getElementById('debugMode');
-  var debugBox     = document.getElementById('debugBox');
-  var previewDebug = document.getElementById('previewDebug');
   var stampInput    = document.getElementById('stampInput');
   var stampInfo     = document.getElementById('stampInfo');
   var stampControls = document.getElementById('stampControls');
@@ -246,8 +231,6 @@ document.addEventListener('DOMContentLoaded', function() {
     btnDownload.style.display = 'none';
     btnReset.style.display = 'inline-flex';
     setStatus('', '');
-    debugBox.style.display = 'none';
-    previewDebug.removeAttribute('src');
 
     if (files.length === 1) {
       showOriginalPreview(files[0]);
@@ -636,11 +619,6 @@ document.addEventListener('DOMContentLoaded', function() {
         setStatus('info', pre + 'Eliminando fondo de <strong>' + file.name + '</strong>…');
         var noBg = await removeBackground(forAI, config);
 
-        if (debugMode.checked && !isMulti) {
-          previewDebug.src = URL.createObjectURL(noBg);
-          debugBox.style.display = '';
-        }
-
         // 4. Corregir la máscara: recuperar zonas del producto que la IA
         //    haya podido confundir con el fondo (bajo contraste)
         setStatus('info', pre + 'Afinando recorte…');
@@ -693,7 +671,6 @@ document.addEventListener('DOMContentLoaded', function() {
     var old = origWrap.querySelector('.preview-placeholder');
     if (old) old.remove();
     previewOrig.style.display = ''; previewOrig.removeAttribute('src'); previewRes.removeAttribute('src');
-    debugBox.style.display = 'none'; previewDebug.removeAttribute('src');
   };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
