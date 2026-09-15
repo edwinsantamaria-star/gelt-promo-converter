@@ -17,7 +17,7 @@ Hoy cada imagen de promo (fotos de producto que llegan de marcas/proveedores en 
 
 ## Formatos de entrada aceptados
 
-JPG · PNG · TIFF · BMP · GIF · WebP · AVIF · HEIC
+JPG · PNG · TIFF · BMP · GIF · WebP · AVIF · HEIC · PDF (se toma la primera página)
 
 ## Cómo se usa
 
@@ -40,6 +40,7 @@ Es una aplicación **100% frontend** (un único `index.html`, sin backend ni ser
 - HTML/CSS/JS vanilla (sin frameworks ni build step)
 - [`@imgly/background-removal`](https://github.com/imgly/background-removal-js) — eliminación de fondo por IA, cargada vía CDN bajo demanda
 - [`UTIF`](https://github.com/photopea/UTIF.js) — soporte de archivos TIFF, cargado bajo demanda
+- [`PDF.js`](https://mozilla.github.io/pdf.js/) — renderiza la primera página de un PDF como imagen, cargado bajo demanda
 - Canvas API nativa del navegador para el resize progresivo y el sharpening
 
 ## Ventajas frente al proceso manual

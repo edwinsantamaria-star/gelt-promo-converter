@@ -137,10 +137,10 @@
   </div>
 
   <div class="drop-zone" id="dropZone">
-    <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.avif,.tiff,.tif,.heic,.heif" multiple />
+    <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.avif,.tiff,.tif,.heic,.heif,.pdf" multiple />
     <div class="drop-icon">📁</div>
     <div class="drop-title">Arrastra tus imágenes aquí</div>
-    <div class="drop-hint">JPG · PNG · TIFF · BMP · GIF · WebP · AVIF · HEIC</div>
+    <div class="drop-hint">JPG · PNG · TIFF · BMP · GIF · WebP · AVIF · HEIC · PDF</div>
   </div>
   <div class="file-info" id="fileInfo"></div>
 
@@ -339,9 +339,40 @@ document.addEventListener('DOMContentLoaded', function() {
     return _removeBg;
   }
 
-  // ── Normalizar TIFF → PNG ─────────────────────────────────────────────────
+  // ── PDF.js lazy (para aceptar PDF como formato de entrada) ────────────────
+  var _pdfjsLib = null;
+  async function getPdfJs() {
+    if (_pdfjsLib) return _pdfjsLib;
+    var mod = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.min.mjs');
+    mod.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.worker.min.mjs';
+    _pdfjsLib = mod;
+    return _pdfjsLib;
+  }
+
+  // Renderiza la primera página del PDF como imagen (fondo blanco) para
+  // poder pasarla por el mismo pipeline de conversión que el resto de formatos.
+  async function pdfToImageBlob(file) {
+    var pdfjsLib = await getPdfJs();
+    var buf = await file.arrayBuffer();
+    var pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    var page = await pdf.getPage(1);
+    var baseViewport = page.getViewport({ scale: 1 });
+    var scale = Math.min(3, 2000 / Math.max(baseViewport.width, baseViewport.height));
+    var viewport = page.getViewport({ scale: scale });
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height);
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+    return new Promise(function(res, rej) {
+      canvas.toBlob(function(b) { b ? res(b) : rej(new Error('No se pudo convertir el PDF a imagen')); }, 'image/png');
+    });
+  }
+
+  // ── Normalizar TIFF/PDF → PNG ─────────────────────────────────────────────
   async function normalizeToBlob(file) {
     var ext = ((file.name.match(/\.([^.]+)$/) || [])[1] || '').toLowerCase();
+    if (ext === 'pdf' || file.type === 'application/pdf') return await pdfToImageBlob(file);
     if (ext !== 'tiff' && ext !== 'tif' && file.type !== 'image/tiff') return file;
     var UTIF = await getUTIF();
     var buf  = await file.arrayBuffer();
