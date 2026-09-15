@@ -411,6 +411,43 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // Comprueba si el borde de la imagen es razonablemente uniforme (un fondo de
+  // estudio real) antes de intentar quitar el fondo. Si el producto llega
+  // hasta el borde con su propio diseño (p.ej. un packshot que ocupa todo el
+  // encuadre), no hay un fondo real que quitar — forzar la IA en ese caso
+  // suele confundir zonas del propio diseño (p.ej. negros del packaging) con fondo.
+  function hasUniformBorder(blob) {
+    return new Promise(function(resolve, reject) {
+      var img = new Image();
+      img.onload = function() {
+        var w = img.width, h = img.height;
+        var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        var ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0);
+        var data = ctx.getImageData(0, 0, w, h).data;
+        var sumR = 0, sumG = 0, sumB = 0, n = 0;
+        function sample(x, y) {
+          var i = (y * w + x) * 4;
+          sumR += data[i]; sumG += data[i+1]; sumB += data[i+2]; n++;
+        }
+        for (var x = 0; x < w; x++) { sample(x, 0); sample(x, h - 1); }
+        for (var y = 0; y < h; y++) { sample(0, y); sample(w - 1, y); }
+        var meanR = sumR / n, meanG = sumG / n, meanB = sumB / n;
+        var sqSum = 0;
+        function sampleDist(x, y) {
+          var i = (y * w + x) * 4;
+          var dr = data[i] - meanR, dg = data[i+1] - meanG, db = data[i+2] - meanB;
+          sqSum += dr*dr + dg*dg + db*db;
+        }
+        for (var x2 = 0; x2 < w; x2++) { sampleDist(x2, 0); sampleDist(x2, h - 1); }
+        for (var y2 = 0; y2 < h; y2++) { sampleDist(0, y2); sampleDist(w - 1, y2); }
+        var stddev = Math.sqrt(sqSum / n);
+        resolve(stddev < 24);
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(blob);
+    });
+  }
+
   // ── Corrección híbrida de máscara: IA + relleno de fondo por color ───────
   // La IA a veces "come" zonas del producto cuando su color se parece al
   // fondo blanco de estudio (bajo contraste). Para corregirlo, además de la
@@ -700,19 +737,30 @@ document.addEventListener('DOMContentLoaded', function() {
         setStatus('info', pre + 'Optimizando para IA…');
         var forAI = await prescale(normalized, 2048, 2048);
 
-        // 3. Eliminar fondo
-        setStatus('info', pre + 'Eliminando fondo de <strong>' + file.name + '</strong>…');
-        var noBg = await removeBackground(forAI, config);
+        // 3. Eliminar fondo — solo si hay un fondo real que quitar. Si el
+        //    diseño del producto ya llega hasta el borde de la imagen (p.ej.
+        //    un packshot que ocupa todo el encuadre), no forzamos la IA:
+        //    suele confundir zonas propias del diseño (negros, etc.) con fondo.
+        var readyForResize;
+        var cleanBg = await hasUniformBorder(forAI);
+        if (cleanBg) {
+          setStatus('info', pre + 'Eliminando fondo de <strong>' + file.name + '</strong>…');
+          var noBg = await removeBackground(forAI, config);
 
-        // 4. Corregir la máscara: recuperar zonas del producto que la IA
-        //    haya podido confundir con el fondo (bajo contraste)
-        setStatus('info', pre + 'Afinando recorte…');
-        noBg = await refineMaskWithFloodFill(forAI, noBg);
-        if (!isMulti) lastRefinedBlob = noBg;
+          // 4. Corregir la máscara: recuperar zonas del producto que la IA
+          //    haya podido confundir con el fondo (bajo contraste)
+          setStatus('info', pre + 'Afinando recorte…');
+          noBg = await refineMaskWithFloodFill(forAI, noBg);
+          readyForResize = noBg;
+        } else {
+          setStatus('info', pre + 'Esta imagen ya ocupa todo el encuadre, sin fondo que quitar…');
+          readyForResize = forAI;
+        }
+        if (!isMulti) lastRefinedBlob = readyForResize;
 
         setStatus('info', pre + 'Redimensionando a 600×700…');
         setProgress(95, 'Redimensionando…');
-        var result  = await resizeToWebP(noBg);
+        var result  = await resizeToWebP(readyForResize);
         var outName = 'ImgPromo_' + file.name.replace(/\.[^.]+$/, '') + '.webp';
         resultBlobs.push({ name: outName, blob: result });
 
