@@ -457,6 +457,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // como tal, O si el relleno de fondo no llegó hasta él (zona "isla" no
   // conectada al fondo real) — así cada técnica cubre el punto débil de la
   // otra, priorizando NO perder parte del producto.
+  var lastRefineNote = '';
   function refineMaskWithFloodFill(origBlob, aiBlob) {
     return new Promise(function(resolve, reject) {
       var imgOrig = new Image(), imgAI = new Image();
@@ -477,67 +478,223 @@ document.addEventListener('DOMContentLoaded', function() {
         ctxA.drawImage(imgAI, 0, 0, w, h);
         var aiData = ctxA.getImageData(0, 0, w, h).data;
 
-        // Relleno de fondo (BFS) sembrado desde todos los bordes. Cada píxel se compara
-        // contra un color de referencia FIJO (muestreado del propio borde), no contra su
-        // vecino inmediato — así un degradado suave de antialiasing (frecuente en bordes
-        // curvos, donde el borde es casi horizontal/vertical) no sirve de "puente" para que
-        // el relleno se cuele paso a paso hacia el interior del producto.
-        var TOL = 26; // distancia euclídea RGB tolerada frente al color de referencia
         var total = w * h;
-        var visited = new Uint8Array(total);
-        var queue = new Int32Array(total);
-        var qHead = 0, qTail = 0;
-
-        var refR = 0, refG = 0, refB = 0, refCount = 0;
-        for (var bx = 0; bx < w; bx++) {
-          addRefSample(bx, 0); addRefSample(bx, h - 1);
-        }
-        for (var by = 0; by < h; by++) {
-          addRefSample(0, by); addRefSample(w - 1, by);
-        }
-        function addRefSample(x, y) {
-          var i = (y * w + x) * 4;
-          refR += origData[i]; refG += origData[i+1]; refB += origData[i+2]; refCount++;
-        }
-        refR /= refCount; refG /= refCount; refB /= refCount;
-
-        function colorDistToRef(i) {
-          var dr = origData[i]   - refR;
-          var dg = origData[i+1] - refG;
-          var db = origData[i+2] - refB;
-          return Math.sqrt(dr*dr + dg*dg + db*db);
-        }
-
-        for (var x = 0; x < w; x++) {
-          var top = x, bottom = (h - 1) * w + x;
-          if (!visited[top])    { visited[top] = 1;    queue[qTail++] = top; }
-          if (!visited[bottom]) { visited[bottom] = 1; queue[qTail++] = bottom; }
-        }
-        for (var y = 0; y < h; y++) {
-          var left = y * w, right = y * w + (w - 1);
-          if (!visited[left])  { visited[left] = 1;  queue[qTail++] = left; }
-          if (!visited[right]) { visited[right] = 1; queue[qTail++] = right; }
-        }
-
-        while (qHead < qTail) {
-          var p  = queue[qHead++];
-          var px = p % w, py = (p / w) | 0;
-          if (px > 0)   { var n1 = p - 1; if (!visited[n1] && colorDistToRef(n1*4) < TOL) { visited[n1] = 1; queue[qTail++] = n1; } }
-          if (px < w-1) { var n2 = p + 1; if (!visited[n2] && colorDistToRef(n2*4) < TOL) { visited[n2] = 1; queue[qTail++] = n2; } }
-          if (py > 0)   { var n3 = p - w; if (!visited[n3] && colorDistToRef(n3*4) < TOL) { visited[n3] = 1; queue[qTail++] = n3; } }
-          if (py < h-1) { var n4 = p + w; if (!visited[n4] && colorDistToRef(n4*4) < TOL) { visited[n4] = 1; queue[qTail++] = n4; } }
-        }
-
-        // Combinar: conservar (opaco) si la IA dice producto O si el relleno no lo alcanzó
-        // De paso, calculamos el bounding box del producto para recortar el margen sobrante.
         var AI_ALPHA_THRESHOLD = 128;
+
+        // El fondo de estudio suele tener un degradado/viñeteo suave, así que el color de
+        // referencia no es único: se estima en cada píxel mezclando el color medio de las 4
+        // bandas de borde (izq/der por fila, arriba/abajo por columna).
+        var BAND = 3;
+        function bandMean(x0, y0, bw, bh) {
+          var r = 0, g = 0, b = 0, n = 0;
+          for (var yy = y0; yy < y0 + bh; yy++) for (var xx = x0; xx < x0 + bw; xx++) {
+            var i = (yy * w + xx) * 4; r += origData[i]; g += origData[i+1]; b += origData[i+2]; n++;
+          }
+          return [r / n, g / n, b / n];
+        }
+        var edgeL = [], edgeR = [], edgeT = [], edgeB = [];
+        for (var ey = 0; ey < h; ey++) {
+          edgeL.push(bandMean(0, ey, Math.min(BAND, w), 1));
+          edgeR.push(bandMean(Math.max(0, w - BAND), ey, Math.min(BAND, w), 1));
+        }
+        for (var ex = 0; ex < w; ex++) {
+          edgeT.push(bandMean(ex, 0, 1, Math.min(BAND, h)));
+          edgeB.push(bandMean(ex, Math.max(0, h - BAND), 1, Math.min(BAND, h)));
+        }
+
+        // ¿Fondo blanco? (mínimo por canal medio de los bordes). Solo entonces se puede exigir
+        // que un píxel sea casi blanco puro para contar como fondo.
+        var edgeMinSum = 0, edgeMinN = 0;
+        [edgeL, edgeR, edgeT, edgeB].forEach(function(arr) {
+          arr.forEach(function(c) { edgeMinSum += Math.min(c[0], c[1], c[2]); edgeMinN++; });
+        });
+        var whiteBg = (edgeMinSum / edgeMinN) >= 243;
+
+        // Parámetros de la estrategia en curso (los fija el bucle de estrategias).
+        var curTol = 9, curMinCh = 0;
+        function colorDistToRef(i) {
+          // Un borde con tinte crema/gris (viñeteo, sombra) NO debe servir de referencia para
+          // píxeles más oscuros: coincidiría con packagings blancos/crema y los borraría.
+          if (Math.min(origData[i], origData[i+1], origData[i+2]) < curMinCh) return Infinity;
+          var p = i >> 2, px = p % w, py = (p / w) | 0;
+          var fx = px / (w - 1 || 1), fy = py / (h - 1 || 1);
+          var L = edgeL[py], R = edgeR[py], T = edgeT[px], B = edgeB[px];
+          var refR = ((L[0] * (1 - fx) + R[0] * fx) + (T[0] * (1 - fy) + B[0] * fy)) / 2;
+          var refG = ((L[1] * (1 - fx) + R[1] * fx) + (T[1] * (1 - fy) + B[1] * fy)) / 2;
+          var refB = ((L[2] * (1 - fx) + R[2] * fx) + (T[2] * (1 - fy) + B[2] * fy)) / 2;
+          var dr = origData[i] - refR, dg = origData[i+1] - refG, db = origData[i+2] - refB;
+          var best = dr*dr + dg*dg + db*db;
+          // También contra cada banda de borde por separado: un tinte en un solo borde
+          // (p.ej. viñeteo en el lado izquierdo) desvía la mezcla en las esquinas.
+          var edges = [L, R, T, B];
+          for (var e = 0; e < 4; e++) {
+            var er = origData[i] - edges[e][0], eg = origData[i+1] - edges[e][1], eb = origData[i+2] - edges[e][2];
+            var ed = er*er + eg*eg + eb*eb;
+            if (ed < best) best = ed;
+          }
+          return Math.sqrt(best);
+        }
+
+        // Relleno de fondo (BFS) sembrado desde todos los bordes. Devuelve el mapa de píxeles
+        // alcanzados como fondo con la tolerancia/mínimo de canal en curso.
+        function floodBackground() {
+          var visited = new Uint8Array(total);
+          var queue = new Int32Array(total);
+          var qHead = 0, qTail = 0;
+          for (var x = 0; x < w; x++) {
+            var top = x, bottom = (h - 1) * w + x;
+            if (!visited[top])    { visited[top] = 1;    queue[qTail++] = top; }
+            if (!visited[bottom]) { visited[bottom] = 1; queue[qTail++] = bottom; }
+          }
+          for (var y = 0; y < h; y++) {
+            var left = y * w, right = y * w + (w - 1);
+            if (!visited[left])  { visited[left] = 1;  queue[qTail++] = left; }
+            if (!visited[right]) { visited[right] = 1; queue[qTail++] = right; }
+          }
+          while (qHead < qTail) {
+            var p  = queue[qHead++];
+            var px = p % w, py = (p / w) | 0;
+            if (px > 0)   { var n1 = p - 1; if (!visited[n1] && colorDistToRef(n1*4) < curTol) { visited[n1] = 1; queue[qTail++] = n1; } }
+            if (px < w-1) { var n2 = p + 1; if (!visited[n2] && colorDistToRef(n2*4) < curTol) { visited[n2] = 1; queue[qTail++] = n2; } }
+            if (py > 0)   { var n3 = p - w; if (!visited[n3] && colorDistToRef(n3*4) < curTol) { visited[n3] = 1; queue[qTail++] = n3; } }
+            if (py < h-1) { var n4 = p + w; if (!visited[n4] && colorDistToRef(n4*4) < curTol) { visited[n4] = 1; queue[qTail++] = n4; } }
+          }
+          return visited;
+        }
+
+        // Máscara final de una estrategia: producto = (IA dice producto) O (el relleno no llegó),
+        // o solo lo segundo si ignoreAI (cuando la IA confunde packaging blanco con fondo).
+        // Después se descartan islas sueltas (restos de degradado): se conservan las componentes
+        // conectadas con tamaño >= 2% de la mayor (un pack de varios productos sigue entero).
+        function buildMask(ignoreAI) {
+          var visited = floodBackground();
+          var keepMask = new Uint8Array(total);
+          for (var k0 = 0; k0 < total; k0++) {
+            keepMask[k0] = ((!ignoreAI && aiData[k0 * 4 + 3] > AI_ALPHA_THRESHOLD) || visited[k0] !== 1) ? 1 : 0;
+          }
+          var comp = new Int32Array(total), compSizes = [0];
+          var stack = new Int32Array(total);
+          for (var s0 = 0; s0 < total; s0++) {
+            if (!keepMask[s0] || comp[s0]) continue;
+            var cid = compSizes.length, sp = 0, size = 0;
+            comp[s0] = cid; stack[sp++] = s0;
+            while (sp > 0) {
+              var cp = stack[--sp]; size++;
+              var cx = cp % w;
+              if (cx > 0     && keepMask[cp - 1] && !comp[cp - 1]) { comp[cp - 1] = cid; stack[sp++] = cp - 1; }
+              if (cx < w - 1 && keepMask[cp + 1] && !comp[cp + 1]) { comp[cp + 1] = cid; stack[sp++] = cp + 1; }
+              if (cp >= w    && keepMask[cp - w] && !comp[cp - w]) { comp[cp - w] = cid; stack[sp++] = cp - w; }
+              if (cp < total - w && keepMask[cp + w] && !comp[cp + w]) { comp[cp + w] = cid; stack[sp++] = cp + w; }
+            }
+            compSizes.push(size);
+          }
+          var largestComp = 0;
+          for (var cs = 1; cs < compSizes.length; cs++) if (compSizes[cs] > largestComp) largestComp = compSizes[cs];
+          for (var k1 = 0; k1 < total; k1++) {
+            if (keepMask[k1] && compSizes[comp[k1]] < largestComp * 0.02) keepMask[k1] = 0;
+          }
+          return keepMask;
+        }
+
+        // Control de calidad: "mordiscos". Un producto real tiene silueta casi convexa; si el
+        // recorte se ha comido parte del packaging queda una muesca entre la máscara y su casco
+        // convexo. Devuelve la profundidad máxima de esa muesca relativa al tamaño del producto
+        // (0 = silueta perfecta; un mordisco como el de la tapa crema da ~3-4%).
+        function dentScore(mask) {
+          var rowMin = new Int32Array(h).fill(-1), rowMax = new Int32Array(h).fill(-1);
+          var colMin = new Int32Array(w).fill(-1), colMax = new Int32Array(w).fill(-1);
+          var minX = w, maxX = -1, minY = h, maxY = -1;
+          for (var y = 0; y < h; y++) {
+            var base = y * w;
+            for (var x = 0; x < w; x++) {
+              if (!mask[base + x]) continue;
+              if (rowMin[y] < 0) rowMin[y] = x;
+              rowMax[y] = x;
+              if (colMin[x] < 0) colMin[x] = y;
+              colMax[x] = y;
+              if (x < minX) minX = x; if (x > maxX) maxX = x;
+              if (y < minY) minY = y; if (y > maxY) maxY = y;
+            }
+          }
+          if (maxX < 0) return 1;
+          var pts = [];
+          for (var yy = 0; yy < h; yy++) if (rowMin[yy] >= 0) { pts.push([rowMin[yy], yy]); pts.push([rowMax[yy], yy]); }
+          for (var xx = 0; xx < w; xx++) if (colMin[xx] >= 0) { pts.push([xx, colMin[xx]]); pts.push([xx, colMax[xx]]); }
+          pts.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
+          function cross(o, a, b) { return (a[0]-o[0]) * (b[1]-o[1]) - (a[1]-o[1]) * (b[0]-o[0]); }
+          var lower = [], upper = [], i;
+          for (i = 0; i < pts.length; i++) {
+            while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], pts[i]) <= 0) lower.pop();
+            lower.push(pts[i]);
+          }
+          for (i = pts.length - 1; i >= 0; i--) {
+            while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], pts[i]) <= 0) upper.pop();
+            upper.push(pts[i]);
+          }
+          upper.pop(); lower.pop();
+          var hull = lower.concat(upper);
+          var hL = new Float64Array(h).fill(Infinity), hR = new Float64Array(h).fill(-Infinity);
+          var hT = new Float64Array(w).fill(Infinity), hB = new Float64Array(w).fill(-Infinity);
+          for (var e = 0; e < hull.length; e++) {
+            var p0 = hull[e], p1 = hull[(e + 1) % hull.length];
+            var ya = Math.min(p0[1], p1[1]), yb = Math.max(p0[1], p1[1]);
+            for (var ry = ya; ry <= yb; ry++) {
+              var tx = p1[1] === p0[1] ? p0[0] : p0[0] + (p1[0] - p0[0]) * (ry - p0[1]) / (p1[1] - p0[1]);
+              if (tx < hL[ry]) hL[ry] = tx; if (tx > hR[ry]) hR[ry] = tx;
+              if (p1[1] === p0[1]) { var tx2 = p1[0]; if (tx2 < hL[ry]) hL[ry] = tx2; if (tx2 > hR[ry]) hR[ry] = tx2; }
+            }
+            var xa = Math.min(p0[0], p1[0]), xb = Math.max(p0[0], p1[0]);
+            for (var cx2 = xa; cx2 <= xb; cx2++) {
+              var ty = p1[0] === p0[0] ? p0[1] : p0[1] + (p1[1] - p0[1]) * (cx2 - p0[0]) / (p1[0] - p0[0]);
+              if (ty < hT[cx2]) hT[cx2] = ty; if (ty > hB[cx2]) hB[cx2] = ty;
+              if (p1[0] === p0[0]) { var ty2 = p1[1]; if (ty2 < hT[cx2]) hT[cx2] = ty2; if (ty2 > hB[cx2]) hB[cx2] = ty2; }
+            }
+          }
+          var dent = 0;
+          for (var r = minY; r <= maxY; r++) {
+            if (rowMin[r] < 0) continue;
+            dent = Math.max(dent, rowMin[r] - hL[r], hR[r] - rowMax[r]);
+          }
+          for (var c = minX; c <= maxX; c++) {
+            if (colMin[c] < 0) continue;
+            dent = Math.max(dent, colMin[c] - hT[c], hB[c] - colMax[c]);
+          }
+          return dent / Math.max(maxX - minX + 1, maxY - minY + 1);
+        }
+
+        // Estrategias de recorte, de la más fiel a la IA a la más estricta con el fondo. Se
+        // empieza por la primera; si el control de calidad detecta un mordisco, se prueban las
+        // siguientes y se usa la que deje la silueta más limpia. Si la primera ya sale bien,
+        // se queda con ella (comportamiento anterior intacto para fondos que ya funcionaban).
+        var strategies = whiteBg ? [
+          { name: 'estándar',              tol: 9, minCh: 243, ignoreAI: false },
+          { name: 'fondo blanco estricto',  tol: 6, minCh: 248, ignoreAI: false },
+          { name: 'solo fondo blanco puro', tol: 4, minCh: 252, ignoreAI: true  }
+        ] : [
+          { name: 'estándar',               tol: 9,  minCh: 0, ignoreAI: false },
+          { name: 'tolerancia baja',        tol: 5,  minCh: 0, ignoreAI: false },
+          { name: 'tolerancia alta',        tol: 14, minCh: 0, ignoreAI: false }
+        ];
+        var DENT_OK = 0.015;
+        var keepMask = null, bestDent = Infinity, bestName = '';
+        for (var si = 0; si < strategies.length; si++) {
+          var st = strategies[si];
+          curTol = st.tol; curMinCh = st.minCh;
+          var m = buildMask(st.ignoreAI);
+          var d = dentScore(m);
+          console.log('[recorte] estrategia "' + st.name + '": muesca ' + (d * 100).toFixed(2) + '%');
+          if (keepMask === null || d < bestDent * 0.7) { keepMask = m; bestDent = d; bestName = st.name; }
+          if (bestDent <= DENT_OK) break;
+        }
+        lastRefineNote = bestName === 'estándar' ? '' :
+          'Recorte corregido automáticamente (' + bestName + ').';
+
+        // Resultado: color original + alfa de la máscara elegida, y bounding box para recortar.
         var out = new Uint8ClampedArray(total * 4);
         var minX = w, minY = h, maxX = -1, maxY = -1;
         for (var idx = 0; idx < total; idx++) {
           var i4 = idx * 4;
-          var aiForeground = aiData[i4 + 3] > AI_ALPHA_THRESHOLD;
-          var reachedAsBg  = visited[idx] === 1;
-          var keep = aiForeground || !reachedAsBg;
+          var keep = keepMask[idx] === 1;
           out[i4]     = origData[i4];
           out[i4 + 1] = origData[i4 + 1];
           out[i4 + 2] = origData[i4 + 2];
@@ -751,6 +908,7 @@ document.addEventListener('DOMContentLoaded', function() {
           //    haya podido confundir con el fondo (bajo contraste)
           setStatus('info', pre + 'Afinando recorte…');
           noBg = await refineMaskWithFloodFill(forAI, noBg);
+          if (lastRefineNote) setStatus('info', pre + lastRefineNote);
           readyForResize = noBg;
         } else {
           setStatus('info', pre + 'Esta imagen ya ocupa todo el encuadre, sin fondo que quitar…');
