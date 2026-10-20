@@ -448,6 +448,87 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // Imágenes que YA vienen con fondo transparente (PNG/WebP/AVIF recortados por el proveedor).
+  // Si el borde es transparente, el recorte ya está hecho: no hay que pasar la IA ni el relleno
+  // de fondo (con el RGB oculto bajo el alfa, negro, confundirían el borde con producto oscuro).
+  // Lo único que hay que limpiar son los píxeles "fantasma": restos casi invisibles (alfa 1-15,
+  // sombras/halos del recorte original) que, si se vuelven opacos, aparecen como siluetas
+  // blancas y además agrandan el recuadro de recorte. Devuelve un PNG limpio y recortado al
+  // producto, o null si la imagen no tiene fondo transparente.
+  function cleanTransparentInput(blob) {
+    return new Promise(function(resolve, reject) {
+      var img = new Image();
+      img.onload = function() {
+        var w = img.width, h = img.height;
+        var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        var ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        var data = ctx.getImageData(0, 0, w, h).data;
+
+        // ¿Borde transparente? (banda de 4 px; basta con que el 90% sea casi transparente)
+        var BORDER = 4, nB = 0, tB = 0;
+        function probe(x, y) { nB++; if (data[(y * w + x) * 4 + 3] < 16) tB++; }
+        for (var bx = 0; bx < w; bx++) {
+          for (var k = 0; k < BORDER && k < h; k++) { probe(bx, k); probe(bx, h - 1 - k); }
+        }
+        for (var by = BORDER; by < h - BORDER; by++) {
+          for (var k2 = 0; k2 < BORDER && k2 < w; k2++) { probe(k2, by); probe(w - 1 - k2, by); }
+        }
+        if (nB === 0 || tB / nB < 0.9) { resolve(null); return; }
+
+        // Máscara: alfa suficiente para ser producto (el resto, fantasmas, se borra del todo)
+        var ALPHA_CUT = 32;
+        var total = w * h;
+        var mask = new Uint8Array(total);
+        for (var i = 0; i < total; i++) mask[i] = data[i * 4 + 3] >= ALPHA_CUT ? 1 : 0;
+
+        // Islas sueltas: solo componentes >= 2% de la mayor (un pack de varios productos sigue entero)
+        var comp = new Int32Array(total), sizes = [0], stack = new Int32Array(total);
+        for (var s0 = 0; s0 < total; s0++) {
+          if (!mask[s0] || comp[s0]) continue;
+          var cid = sizes.length, sp = 0, size = 0;
+          comp[s0] = cid; stack[sp++] = s0;
+          while (sp > 0) {
+            var cp = stack[--sp]; size++;
+            var cx = cp % w;
+            if (cx > 0     && mask[cp - 1] && !comp[cp - 1]) { comp[cp - 1] = cid; stack[sp++] = cp - 1; }
+            if (cx < w - 1 && mask[cp + 1] && !comp[cp + 1]) { comp[cp + 1] = cid; stack[sp++] = cp + 1; }
+            if (cp >= w    && mask[cp - w] && !comp[cp - w]) { comp[cp - w] = cid; stack[sp++] = cp - w; }
+            if (cp < total - w && mask[cp + w] && !comp[cp + w]) { comp[cp + w] = cid; stack[sp++] = cp + w; }
+          }
+          sizes.push(size);
+        }
+        var largest = 0;
+        for (var cs = 1; cs < sizes.length; cs++) if (sizes[cs] > largest) largest = sizes[cs];
+
+        var out = new Uint8ClampedArray(total * 4);
+        var minX = w, minY = h, maxX = -1, maxY = -1;
+        for (var idx = 0; idx < total; idx++) {
+          var i4 = idx * 4;
+          if (mask[idx] && sizes[comp[idx]] >= largest * 0.02) {
+            out[i4] = data[i4]; out[i4 + 1] = data[i4 + 1]; out[i4 + 2] = data[i4 + 2]; out[i4 + 3] = data[i4 + 3];
+            var kx = idx % w, ky = (idx / w) | 0;
+            if (kx < minX) minX = kx; if (kx > maxX) maxX = kx;
+            if (ky < minY) minY = ky; if (ky > maxY) maxY = ky;
+          }
+        }
+        if (maxX < minX || maxY < minY) { resolve(null); return; }
+
+        var full = document.createElement('canvas'); full.width = w; full.height = h;
+        full.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
+        var bboxW = maxX - minX + 1, bboxH = maxY - minY + 1;
+        var pad = Math.round(0.04 * Math.max(bboxW, bboxH));
+        var cropX = Math.max(0, minX - pad), cropY = Math.max(0, minY - pad);
+        var cropW = Math.min(w, maxX + pad + 1) - cropX, cropH = Math.min(h, maxY + pad + 1) - cropY;
+        var oc = document.createElement('canvas'); oc.width = cropW; oc.height = cropH;
+        oc.getContext('2d').drawImage(full, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        oc.toBlob(function(b) { b ? resolve(b) : reject(new Error('cleanTransparentInput toBlob failed')); }, 'image/png');
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(blob);
+    });
+  }
+
   // ── Corrección híbrida de máscara: IA + relleno de fondo por color ───────
   // La IA a veces "come" zonas del producto cuando su color se parece al
   // fondo blanco de estudio (bajo contraste). Para corregirlo, además de la
@@ -899,8 +980,12 @@ document.addEventListener('DOMContentLoaded', function() {
         //    un packshot que ocupa todo el encuadre), no forzamos la IA:
         //    suele confundir zonas propias del diseño (negros, etc.) con fondo.
         var readyForResize;
-        var cleanBg = await hasUniformBorder(forAI);
-        if (cleanBg) {
+        var alreadyTransparent = await cleanTransparentInput(forAI);
+        var cleanBg = alreadyTransparent ? false : await hasUniformBorder(forAI);
+        if (alreadyTransparent) {
+          setStatus('info', pre + 'Esta imagen ya tiene fondo transparente, limpiando restos…');
+          readyForResize = alreadyTransparent;
+        } else if (cleanBg) {
           setStatus('info', pre + 'Eliminando fondo de <strong>' + file.name + '</strong>…');
           var noBg = await removeBackground(forAI, config);
 
