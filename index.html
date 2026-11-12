@@ -679,9 +679,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Control de calidad: "mordiscos". Un producto real tiene silueta casi convexa; si el
         // recorte se ha comido parte del packaging queda una muesca entre la máscara y su casco
-        // convexo. Devuelve la profundidad máxima de esa muesca relativa al tamaño del producto
-        // (0 = silueta perfecta; un mordisco como el de la tapa crema da ~3-4%).
-        function dentScore(mask) {
+        // convexo. Devuelve { dent, rect, hL, hR, minY, maxY }: dent = profundidad máxima de esa
+        // muesca relativa al tamaño del producto (0 = silueta perfecta; un mordisco como el de la
+        // tapa crema da ~3-4%); rect = área del casco / área de su caja (1 = rectángulo perfecto);
+        // hL/hR = extensión horizontal del casco en cada fila (para completar la silueta).
+        function hullInfo(mask) {
           var rowMin = new Int32Array(h).fill(-1), rowMax = new Int32Array(h).fill(-1);
           var colMin = new Int32Array(w).fill(-1), colMax = new Int32Array(w).fill(-1);
           var minX = w, maxX = -1, minY = h, maxY = -1;
@@ -697,7 +699,7 @@ document.addEventListener('DOMContentLoaded', function() {
               if (y < minY) minY = y; if (y > maxY) maxY = y;
             }
           }
-          if (maxX < 0) return 1;
+          if (maxX < 0) return { dent: 1, rect: 0 };
           var pts = [];
           for (var yy = 0; yy < h; yy++) if (rowMin[yy] >= 0) { pts.push([rowMin[yy], yy]); pts.push([rowMax[yy], yy]); }
           for (var xx = 0; xx < w; xx++) if (colMin[xx] >= 0) { pts.push([xx, colMin[xx]]); pts.push([xx, colMax[xx]]); }
@@ -740,7 +742,13 @@ document.addEventListener('DOMContentLoaded', function() {
             if (colMin[c] < 0) continue;
             dent = Math.max(dent, colMin[c] - hT[c], hB[c] - colMax[c]);
           }
-          return dent / Math.max(maxX - minX + 1, maxY - minY + 1);
+          var hullArea = 0;
+          for (var ha = minY; ha <= maxY; ha++) if (hR[ha] >= hL[ha]) hullArea += hR[ha] - hL[ha] + 1;
+          return {
+            dent: dent / Math.max(maxX - minX + 1, maxY - minY + 1),
+            rect: hullArea / ((maxX - minX + 1) * (maxY - minY + 1)),
+            hL: hL, hR: hR, minY: minY, maxY: maxY
+          };
         }
 
         // Estrategias de recorte, de la más fiel a la IA a la más estricta con el fondo. Se
@@ -757,18 +765,36 @@ document.addEventListener('DOMContentLoaded', function() {
           { name: 'tolerancia alta',        tol: 14, minCh: 0, ignoreAI: false }
         ];
         var DENT_OK = 0.015;
-        var keepMask = null, bestDent = Infinity, bestName = '';
+        var keepMask = null, bestDent = Infinity, bestName = '', bestInfo = null;
         for (var si = 0; si < strategies.length; si++) {
           var st = strategies[si];
           curTol = st.tol; curMinCh = st.minCh;
           var m = buildMask(st.ignoreAI);
-          var d = dentScore(m);
+          var info = hullInfo(m), d = info.dent;
           console.log('[recorte] estrategia "' + st.name + '": muesca ' + (d * 100).toFixed(2) + '%');
-          if (keepMask === null || d < bestDent * 0.7) { keepMask = m; bestDent = d; bestName = st.name; }
+          if (keepMask === null || d < bestDent * 0.7) { keepMask = m; bestDent = d; bestName = st.name; bestInfo = info; }
           if (bestDent <= DENT_OK) break;
         }
         lastRefineNote = bestName === 'estándar' ? '' :
           'Recorte corregido automáticamente (' + bestName + ').';
+
+        // Último recurso: envase blanco sobre fondo blanco. Si la cara del packaging es idéntica al
+        // fondo (p.ej. caja con media cara blanca), ningún método por color puede separarla y la
+        // máscara queda hecha jirones (muesca enorme). Si aun así la silueta es claramente un
+        // envase rectangular (casco ~ su caja), se completa con el casco convexo: se recuperan las
+        // caras blancas y también las letras/iconos sueltos de dentro (que el filtro de islas borraba).
+        var DENT_HULL = 0.05, RECT_MIN = 0.92;
+        if (bestInfo && bestDent > DENT_HULL && bestInfo.rect >= RECT_MIN) {
+          var filled = new Uint8Array(keepMask);
+          for (var fy = bestInfo.minY; fy <= bestInfo.maxY; fy++) {
+            if (!(bestInfo.hR[fy] >= bestInfo.hL[fy])) continue;
+            var fx0 = Math.ceil(bestInfo.hL[fy]), fx1 = Math.floor(bestInfo.hR[fy]);
+            for (var fx = fx0; fx <= fx1; fx++) filled[fy * w + fx] = 1;
+          }
+          console.log('[recorte] silueta completada con casco convexo (muesca ' + (bestDent * 100).toFixed(1) + '%, rectangularidad ' + (bestInfo.rect * 100).toFixed(1) + '%)');
+          keepMask = filled;
+          lastRefineNote = 'Envase blanco sobre fondo blanco: silueta completada automáticamente.';
+        }
 
         // Resultado: color original + alfa de la máscara elegida, y bounding box para recortar.
         var out = new Uint8ClampedArray(total * 4);
