@@ -29,6 +29,9 @@ Si se aplica una estrategia distinta de la estándar, se indica en el estado ("R
 ### Envases blancos sobre fondo blanco (caja merci Black & White)
 Si una parte del envase es del mismo blanco puro que el fondo (p.ej. una caja con media cara blanca), ningún método por color puede separarla: la máscara queda hecha jirones y se pierden las caras blancas y los textos/iconos sueltos de dentro (en la merci desaparecían la "r", la "i", el corazón y "BLACK & WHITE SELECTION"). El control de calidad lo detecta porque la muesca sale enorme (≈97%, frente a ≈2-3% de un recorte sano). Entonces, si la silueta es claramente un envase rectangular (casco convexo ≈ su caja, ≥92%) y la muesca supera el 5%, **se completa la silueta con el casco convexo**: se recuperan las caras blancas y todo lo que hay dentro. Los productos con silueta no rectangular o con muescas pequeñas no se tocan.
 
+### Envases con plástico/film translúcido (HiVegs sobrasada al vacío)
+El film del envasado al vacío y su sombra son casi del color del fondo en un lado (se pierde) y más oscuros en el otro (se conserva). Tanto el relleno por color como la IA lo dejaban a medias y quedaba una **tira gris "fantasma"** a un lado del producto, con el otro lado limpio. Aquí tampoco sirve la muesca como señal (la etiqueta es más ancha que el cuerpo y parece un mordisco enorme), así que se compara con el **núcleo opaco**: producto = píxeles muy distintos del fondo local (distancia de color ≥ 120), con cierre de grietas, relleno de huecos interiores (letras claras, reflejos), descarte de islas y 2 px de margen. El núcleo se usa solo si se cumplen **las tres** condiciones: (a) es compacto y casi completo (≥ 60% del área actual, solidez ≥ 0,92), (b) lo que el recorte actual añade fuera de él (≥ 8%) es de bajo contraste con el fondo (< 80, película/sombra y no producto) y (c) el recorte actual sale claramente deformado (muesca > 5%). Los envases blancos/crema no lo cumplen (su núcleo es solo la impresión), así que Valor y merci no cambian.
+
 ### Imágenes que ya vienen con fondo transparente
 Si el borde de la imagen ya es transparente (PNG/WebP/AVIF recortados por el proveedor), la herramienta **no pasa la IA ni el relleno de fondo**: usa el alfa original. Solo limpia los píxeles "fantasma" (alfa muy bajo, 1-15, restos de sombra/halo del recorte original) que, al volverse opacos, aparecían como siluetas blancas alrededor del producto y agrandaban el recuadro de recorte (el producto salía más pequeño). Umbral: alfa < 32 se borra; se descartan además islas sueltas y se recorta al producto.
 
@@ -37,6 +40,7 @@ Si el borde de la imagen ya es transparente (PNG/WebP/AVIF recortados por el pro
 
 - `tests/originales/` y `tests/resultados_ok/`: tres vistas del bote Valor Cacao Plus (fondo blanco opaco, packaging crema), que reproducían el recorte que se comía la tapa.
 - `tests/originales_cetaphil/`: cuatro packshots Cetaphil WebP 2000×2000 con fondo transparente y píxeles fantasma, que reproducían las siluetas blancas.
+- `tests/originales_hivegs/`: sobrasada HiVegs (JPG 719×2000, fondo gris azulado con degradado y film translúcido) y `convertida_mala.webp`, la conversión errónea con la tira gris.
 - `tests/originales_merci/`: caja merci Black & White (JPG 1600×1600, cara blanca = fondo), que reproducía la pérdida de la cara blanca y del texto.
 
 Tras tocar el algoritmo de recorte, convertir todas y comprobar sobre fondo oscuro que el producto sale entero y sin siluetas.
@@ -89,6 +93,7 @@ No hace falta revisar ni retocar nada a mano: la herramienta detecta el tipo de 
 | Fecha | Problema detectado | Mejora (automática, sin pasos manuales) |
 |---|---|---|
 | 2026-10-19 | Packagings blancos/crema sobre fondo blanco (bote Valor Cacao Plus): la tapa y los bordes quedaban transparentes ("mordiscos") | Fondo estimado con degradado, exige blanco casi puro, descarta islas y control de calidad de la silueta con estrategias alternativas |
+| 2026-11-18 | Salchicha HiVegs envasada al vacío: tira gris fantasma (film + sombra) a un lado del producto | Si el recorte sale deformado y el "núcleo opaco" es compacto y lo sobrante es de bajo contraste, se usa el núcleo (automático) |
 | 2026-11-12 | Caja con media cara blanca sobre fondo blanco (merci Black & White): se perdía la cara blanca, el logo "merci" quedaba como "mec" y desaparecían corazón y texto | Si la muesca es enorme y el envase es rectangular, se completa la silueta con el casco convexo (automático) |
 | 2026-10-20 | Packshots que ya vienen con fondo transparente (Cetaphil WebP): siluetas fantasma blancas y producto más pequeño | Si el borde ya es transparente se usa el alfa original, se borra el alfa residual y se recorta al producto, sin pasar por la IA |
 

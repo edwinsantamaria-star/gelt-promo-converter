@@ -643,16 +643,9 @@ document.addEventListener('DOMContentLoaded', function() {
           return visited;
         }
 
-        // Máscara final de una estrategia: producto = (IA dice producto) O (el relleno no llegó),
-        // o solo lo segundo si ignoreAI (cuando la IA confunde packaging blanco con fondo).
-        // Después se descartan islas sueltas (restos de degradado): se conservan las componentes
-        // conectadas con tamaño >= 2% de la mayor (un pack de varios productos sigue entero).
-        function buildMask(ignoreAI) {
-          var visited = floodBackground();
-          var keepMask = new Uint8Array(total);
-          for (var k0 = 0; k0 < total; k0++) {
-            keepMask[k0] = ((!ignoreAI && aiData[k0 * 4 + 3] > AI_ALPHA_THRESHOLD) || visited[k0] !== 1) ? 1 : 0;
-          }
+        // Descarta islas sueltas: se conservan solo las componentes conectadas con tamaño >= 2%
+        // de la mayor (un pack de varios productos sigue entero). Modifica la máscara en sitio.
+        function dropSmallIslands(keepMask) {
           var comp = new Int32Array(total), compSizes = [0];
           var stack = new Int32Array(total);
           for (var s0 = 0; s0 < total; s0++) {
@@ -674,6 +667,74 @@ document.addEventListener('DOMContentLoaded', function() {
           for (var k1 = 0; k1 < total; k1++) {
             if (keepMask[k1] && compSizes[comp[k1]] < largestComp * 0.02) keepMask[k1] = 0;
           }
+        }
+
+        // Máscaras morfológicas (ventana cuadrada de lado 2r+1, con sumas deslizantes).
+        function dilateMask(src, r) {
+          var tmp = new Uint8Array(total), out = new Uint8Array(total), cnt, x, y, base;
+          for (y = 0; y < h; y++) {
+            base = y * w; cnt = 0;
+            for (x = 0; x <= Math.min(r, w - 1); x++) cnt += src[base + x];
+            for (x = 0; x < w; x++) {
+              tmp[base + x] = cnt > 0 ? 1 : 0;
+              if (x + r + 1 < w) cnt += src[base + x + r + 1];
+              if (x - r >= 0) cnt -= src[base + x - r];
+            }
+          }
+          for (x = 0; x < w; x++) {
+            cnt = 0;
+            for (y = 0; y <= Math.min(r, h - 1); y++) cnt += tmp[y * w + x];
+            for (y = 0; y < h; y++) {
+              out[y * w + x] = cnt > 0 ? 1 : 0;
+              if (y + r + 1 < h) cnt += tmp[(y + r + 1) * w + x];
+              if (y - r >= 0) cnt -= tmp[(y - r) * w + x];
+            }
+          }
+          return out;
+        }
+        function invertMask(m) { var o = new Uint8Array(total); for (var i = 0; i < total; i++) o[i] = m[i] ? 0 : 1; return o; }
+
+        // Estrategia "núcleo opaco": producto = píxeles claramente distintos del fondo local
+        // (distancia de color >= T). Útil cuando el envase lleva plástico/film translúcido, cuya
+        // sombra o borde es casi del color del fondo en un lado y más oscuro en el otro (el relleno
+        // por color y la IA lo conservan a medias y queda una tira "fantasma"). El film es mucho
+        // menos distinto del fondo que el producto, así que un umbral alto lo deja fuera por igual.
+        // Después se cierran grietas, se rellenan huecos interiores (letras claras de la etiqueta,
+        // reflejos), se quitan islas y se engorda 2 px para recuperar el borde suavizado.
+        function buildCoreMask(T) {
+          var core = new Uint8Array(total);
+          for (var i = 0; i < total; i++) core[i] = colorDistToRef(i * 4) >= T ? 1 : 0;
+          var closed = invertMask(dilateMask(invertMask(dilateMask(core, 5)), 5)); // cierre: dilatar y erosionar
+          // huecos: lo que no es alcanzable desde el borde sin cruzar el producto
+          var outside = new Uint8Array(total), q = new Int32Array(total), qh = 0, qt = 0, k;
+          function seed(idx) { if (!closed[idx] && !outside[idx]) { outside[idx] = 1; q[qt++] = idx; } }
+          for (k = 0; k < w; k++) { seed(k); seed((h - 1) * w + k); }
+          for (k = 0; k < h; k++) { seed(k * w); seed(k * w + w - 1); }
+          while (qh < qt) {
+            var p = q[qh++], px = p % w;
+            if (px > 0)         seed(p - 1);
+            if (px < w - 1)     seed(p + 1);
+            if (p >= w)         seed(p - w);
+            if (p < total - w)  seed(p + w);
+          }
+          var filled = new Uint8Array(total);
+          for (k = 0; k < total; k++) filled[k] = outside[k] ? 0 : 1;
+          dropSmallIslands(filled);
+          return dilateMask(filled, 2);
+        }
+
+        // Máscara final de una estrategia: producto = (IA dice producto) O (el relleno no llegó),
+        // o solo lo segundo si ignoreAI (cuando la IA confunde packaging blanco con fondo).
+        // Después se descartan islas sueltas (restos de degradado): se conservan las componentes
+        // conectadas con tamaño >= 2% de la mayor (un pack de varios productos sigue entero).
+        function buildMask(ignoreAI, aiOnly) {
+          // aiOnly: se confía solo en la máscara de la IA (sin relleno de fondo por color)
+          var visited = aiOnly ? new Uint8Array(total).fill(1) : floodBackground();
+          var keepMask = new Uint8Array(total);
+          for (var k0 = 0; k0 < total; k0++) {
+            keepMask[k0] = ((!ignoreAI && aiData[k0 * 4 + 3] > AI_ALPHA_THRESHOLD) || visited[k0] !== 1) ? 1 : 0;
+          }
+          dropSmallIslands(keepMask);
           return keepMask;
         }
 
@@ -747,6 +808,7 @@ document.addEventListener('DOMContentLoaded', function() {
           return {
             dent: dent / Math.max(maxX - minX + 1, maxY - minY + 1),
             rect: hullArea / ((maxX - minX + 1) * (maxY - minY + 1)),
+            hullArea: hullArea,
             hL: hL, hR: hR, minY: minY, maxY: maxY
           };
         }
@@ -758,18 +820,20 @@ document.addEventListener('DOMContentLoaded', function() {
         var strategies = whiteBg ? [
           { name: 'estándar',              tol: 9, minCh: 243, ignoreAI: false },
           { name: 'fondo blanco estricto',  tol: 6, minCh: 248, ignoreAI: false },
-          { name: 'solo fondo blanco puro', tol: 4, minCh: 252, ignoreAI: true  }
+          { name: 'solo fondo blanco puro', tol: 4, minCh: 252, ignoreAI: true  },
+          { name: 'solo IA',                tol: 9, minCh: 0,   ignoreAI: false, aiOnly: true }
         ] : [
           { name: 'estándar',               tol: 9,  minCh: 0, ignoreAI: false },
           { name: 'tolerancia baja',        tol: 5,  minCh: 0, ignoreAI: false },
-          { name: 'tolerancia alta',        tol: 14, minCh: 0, ignoreAI: false }
+          { name: 'tolerancia alta',        tol: 14, minCh: 0, ignoreAI: false },
+          { name: 'solo IA',                tol: 9,  minCh: 0, ignoreAI: false, aiOnly: true }
         ];
         var DENT_OK = 0.015;
         var keepMask = null, bestDent = Infinity, bestName = '', bestInfo = null;
         for (var si = 0; si < strategies.length; si++) {
           var st = strategies[si];
           curTol = st.tol; curMinCh = st.minCh;
-          var m = buildMask(st.ignoreAI);
+          var m = buildMask(st.ignoreAI, st.aiOnly);
           var info = hullInfo(m), d = info.dent;
           console.log('[recorte] estrategia "' + st.name + '": muesca ' + (d * 100).toFixed(2) + '%');
           if (keepMask === null || d < bestDent * 0.7) { keepMask = m; bestDent = d; bestName = st.name; bestInfo = info; }
@@ -778,13 +842,47 @@ document.addEventListener('DOMContentLoaded', function() {
         lastRefineNote = bestName === 'estándar' ? '' :
           'Recorte corregido automáticamente (' + bestName + ').';
 
+        // Envase con plástico/film translúcido (p.ej. envasado al vacío): el film y su sombra son
+        // casi del color del fondo en un lado y más oscuros en el otro, y tanto el relleno por color
+        // como la IA lo conservan a medias (queda una tira "fantasma" a un lado). Se compara con el
+        // "núcleo opaco" (producto = píxeles muy distintos del fondo). Se prefiere el núcleo solo si:
+        //  (a) es una silueta compacta y casi completa (>= 60% del área actual, solidez >= 0.92), y
+        //  (b) lo que el recorte actual añade fuera de él (>= 8% del área) es de bajo contraste con
+        //      el fondo (distancia media < 80), es decir, película/sombra y no producto, y
+        //  (c) el recorte actual ya sale claramente deformado (muesca > 5%).
+        // Un envase blanco/crema no lo cumple (su núcleo es solo la impresión: poca área/solidez, y
+        // su recorte estándar ya sale con muesca pequeña). Umbrales ajustados con salchicha HiVegs
+        // (solidez 96%, muesca 18%) frente a Valor (solidez 86%, muesca 3%).
+        var DENT_HULL = 0.05, RECT_MIN = 0.92;
+        var coreChosen = false;
+        if (bestDent > DENT_HULL) {
+          curMinCh = 0;
+          var coreMask = buildCoreMask(120);
+          var areaBest = 0, areaCore = 0, k2;
+          for (k2 = 0; k2 < total; k2++) { areaBest += keepMask[k2]; areaCore += coreMask[k2]; }
+          if (areaCore >= 0.6 * areaBest) {
+            var coreInfo = hullInfo(coreMask);
+            var solidity = coreInfo.hullArea ? areaCore / coreInfo.hullArea : 0;
+            var coreNear = dilateMask(coreMask, 6), extraN = 0, extraSum = 0;
+            for (k2 = 0; k2 < total; k2++) {
+              if (keepMask[k2] && !coreNear[k2]) { extraN++; extraSum += colorDistToRef(k2 * 4); }
+            }
+            var extraMean = extraN ? extraSum / extraN : 0;
+            console.log('[recorte] núcleo opaco: área ' + (100 * areaCore / areaBest).toFixed(0) + '% del recorte actual, solidez ' +
+              (solidity * 100).toFixed(0) + '%, sobrante ' + (100 * extraN / areaBest).toFixed(1) + '% con contraste medio ' + extraMean.toFixed(0));
+            if (solidity >= 0.92 && extraN >= 0.08 * areaBest && extraMean < 80) {
+              keepMask = coreMask; coreChosen = true;
+              lastRefineNote = 'Envase con plástico translúcido: recorte ajustado al producto automáticamente.';
+            }
+          }
+        }
+
         // Último recurso: envase blanco sobre fondo blanco. Si la cara del packaging es idéntica al
         // fondo (p.ej. caja con media cara blanca), ningún método por color puede separarla y la
         // máscara queda hecha jirones (muesca enorme). Si aun así la silueta es claramente un
         // envase rectangular (casco ~ su caja), se completa con el casco convexo: se recuperan las
         // caras blancas y también las letras/iconos sueltos de dentro (que el filtro de islas borraba).
-        var DENT_HULL = 0.05, RECT_MIN = 0.92;
-        if (bestInfo && bestDent > DENT_HULL && bestInfo.rect >= RECT_MIN) {
+        if (!coreChosen && bestInfo && bestDent > DENT_HULL && bestInfo.rect >= RECT_MIN) {
           var filled = new Uint8Array(keepMask);
           for (var fy = bestInfo.minY; fy <= bestInfo.maxY; fy++) {
             if (!(bestInfo.hR[fy] >= bestInfo.hL[fy])) continue;
