@@ -49,6 +49,17 @@ El film del envasado al vacío y su sombra son casi del color del fondo en un la
 ### Imágenes que ya vienen con fondo transparente
 Si el borde de la imagen ya es transparente (PNG/WebP/AVIF recortados por el proveedor), la herramienta **no pasa la IA ni el relleno de fondo**: usa el alfa original. Solo limpia los píxeles "fantasma" (alfa muy bajo, 1-15, restos de sombra/halo del recorte original) que, al volverse opacos, aparecían como siluetas blancas alrededor del producto y agrandaban el recuadro de recorte (el producto salía más pequeño). Umbral: alfa < 32 se borra; se descartan además islas sueltas y se recorta al producto.
 
+### Imagen promo con descripción
+Debajo de la zona de subida hay un interruptor **«Imagen promo con descripción»**. Al activarlo:
+
+1. Se pega el **link de la tarea de ClickUp** (la tarea *IMAGEN PROMO*; si se pega la tarea padre *MONTAJE SET UP*, la herramienta busca sola su subtarea IMAGEN PROMO).
+2. La herramienta lee el campo **DESCRIPCIÓN IMAGEN PROMO** de la tabla de la descripción de la tarea (una descripción por línea) y rellena hasta **3** campos editables. Si el campo está vacío o se quiere retocar, se escriben a mano.
+3. Al convertir se descargan dos archivos por imagen: la promo normal (`ImgPromo_<original>.webp`) y la versión con descripción (`ImgPromo_<original>_descripcion.webp`, 600×700 WebP). El preview enseña la versión con descripción y se actualiza al editar los textos.
+
+Diseño (según los ejemplos Mahou / Dr. Oetker): producto centrado y más pequeño, textos en Poppins SemiBold negro, centrados, y una flecha curva «dibujada a mano» de junto al producto hacia cada texto. Dos maquetas automáticas: producto alto (botella, alto/ancho ≥ 1,45) → textos a los lados; producto ancho o cuadrado (caja, sobre) → textos arriba y abajo (1: arriba derecha · 2: arriba izquierda y abajo derecha · 3: arriba izquierda, arriba derecha y abajo derecha).
+
+**Token de ClickUp:** la primera vez cada persona pega su token personal (ClickUp › avatar › Settings › Apps › API Token, empieza por `pk_`). Se guarda solo en el `localStorage` de su navegador; nunca va al repo. Si caduca o es incorrecto, la herramienta lo pide de nuevo.
+
 ### Imágenes de prueba
 (Carpeta `tests/` solo en el equipo local de desarrollo; no se publica en GitHub por contener imágenes de marcas.)
 
@@ -107,6 +118,7 @@ No hace falta revisar ni retocar nada a mano: la herramienta detecta el tipo de 
 | Fecha | Problema detectado | Mejora (automática, sin pasos manuales) |
 |---|---|---|
 | 2026-10-19 | Packagings blancos/crema sobre fondo blanco (bote Valor Cacao Plus): la tapa y los bordes quedaban transparentes ("mordiscos") | Fondo estimado con degradado, exige blanco casi puro, descarta islas y control de calidad de la silueta con estrategias alternativas |
+| 2026-11-19 | Se pide una versión de la imagen promo con descripciones | Interruptor «Imagen promo con descripción»: lee hasta 3 descripciones del campo DESCRIPCIÓN IMAGEN PROMO de la tarea de ClickUp y genera `ImgPromo_<original>_descripcion.webp` con textos y flechas |
 | 2026-11-19 | Se pide una herramienta para producir los banners de «Gana más» sin pasar por diseño | Nueva pestaña **Banners Gana más** (`banners.html`) a partir del artefacto del equipo, con barra de pestañas común |
 | 2026-11-18 | Salchicha HiVegs envasada al vacío: tira gris fantasma (film + sombra) a un lado del producto | Si el recorte sale deformado y el "núcleo opaco" es compacto y lo sobrante es de bajo contraste, se usa el núcleo (automático) |
 | 2026-11-12 | Caja con media cara blanca sobre fondo blanco (merci Black & White): se perdía la cara blanca, el logo "merci" quedaba como "mec" y desaparecían corazón y texto | Si la muesca es enorme y el envase es rectangular, se completa la silueta con el casco convexo (automático) |
