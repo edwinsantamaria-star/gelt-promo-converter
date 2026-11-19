@@ -6,7 +6,7 @@
   <title>Gelt · Conversor de Imágenes Promo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Poppins:wght@600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -85,6 +85,30 @@
     input[type="range"] { accent-color: #FF344C; }
     input[type="checkbox"] { accent-color: #FF344C; }
 
+
+    /* ── Imagen promo con descripción ── */
+    .desc-box { border:1px solid #eee; border-radius:12px; padding:14px 16px; margin-top:16px; }
+    .desc-head { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
+    .desc-head-title { font-size:12px; font-weight:600; color:#333; }
+    .desc-head-hint { font-size:11px; color:#999; margin-top:2px; }
+    .switch { position:relative; width:42px; height:24px; flex-shrink:0; }
+    .switch input { opacity:0; width:0; height:0; position:absolute; }
+    .switch .slider { position:absolute; inset:0; background:#ddd; border-radius:999px; transition:background .2s; cursor:pointer; }
+    .switch .slider::before { content:''; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+    .switch input:checked + .slider { background:#FF344C; }
+    .switch input:checked + .slider::before { transform:translateX(18px); }
+    .desc-body { display:none; margin-top:14px; flex-direction:column; gap:10px; }
+    .desc-body.visible { display:flex; }
+    .desc-body label { font-size:11px; font-weight:600; color:#666; display:block; margin-bottom:4px; }
+    .desc-body input[type=text], .desc-body input[type=password] { width:100%; font-family:inherit; font-size:13px; padding:9px 11px; border:1.5px solid #E5E5E5; border-radius:10px; outline:none; }
+    .desc-body input[type=text]:focus, .desc-body input[type=password]:focus { border-color:#FF344C; }
+    .desc-row { display:flex; gap:8px; }
+    .desc-row input { flex:1; }
+    .desc-row .btn { flex:none; padding:9px 14px; font-size:12px; border-radius:10px; }
+    .desc-msg { font-size:11px; color:#999; min-height:14px; }
+    .desc-msg.ok { color:#26AB63; } .desc-msg.err { color:#C33200; }
+    .desc-link { font-size:11px; color:#999; text-decoration:underline; cursor:pointer; background:none; border:none; padding:0; font-family:inherit; }
+
     .note { margin-top: 12px; font-size: 11px; color: #bbb; text-align: center; }
     footer { margin-top: 24px; font-size: 12px; color: #bbb; text-align: center; }
   </style>
@@ -152,6 +176,43 @@
   </div>
   <div class="file-info" id="fileInfo"></div>
 
+  <div class="desc-box" id="descBox">
+    <div class="desc-head" id="descHead">
+      <div>
+        <div class="desc-head-title">📝 Imagen promo con descripción</div>
+        <div class="desc-head-hint">Añade hasta 3 descripciones con flechas, sacadas de la tarea de ClickUp</div>
+      </div>
+      <label class="switch" onclick="event.stopPropagation()"><input type="checkbox" id="descToggle" /><span class="slider"></span></label>
+    </div>
+    <div class="desc-body" id="descBody">
+      <div id="tokenWrap" style="display:none;">
+        <label for="cuToken">Tu token personal de ClickUp (solo la primera vez)</label>
+        <div class="desc-row">
+          <input type="password" id="cuToken" placeholder="pk_…" autocomplete="off" />
+          <button type="button" class="btn btn-secondary" id="btnSaveToken">Guardar</button>
+        </div>
+        <div class="desc-msg">En ClickUp: tu avatar › Settings › Apps › API Token › Generate/Copy. Se guarda solo en este navegador.</div>
+      </div>
+      <div>
+        <label for="cuLink">Link de la tarea de ClickUp (IMAGEN PROMO)</label>
+        <div class="desc-row">
+          <input type="text" id="cuLink" placeholder="https://app.clickup.com/t/…" />
+          <button type="button" class="btn btn-secondary" id="btnReadTask">Leer</button>
+        </div>
+        <div class="desc-msg" id="cuMsg"></div>
+      </div>
+      <div>
+        <label>Descripciones (campo DESCRIPCIÓN IMAGEN PROMO · máx. 3)</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <input type="text" class="desc-input" id="desc1" placeholder="Descripción 1" maxlength="70" />
+          <input type="text" class="desc-input" id="desc2" placeholder="Descripción 2" maxlength="70" />
+          <input type="text" class="desc-input" id="desc3" placeholder="Descripción 3" maxlength="70" />
+        </div>
+      </div>
+      <div><button type="button" class="desc-link" id="btnChangeToken">Cambiar token de ClickUp</button></div>
+    </div>
+  </div>
+
   <div class="progress-wrap" id="progressWrap">
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="progress-text" id="progressText"></div>
@@ -166,7 +227,7 @@
       </div>
     </div>
     <div class="preview-box">
-      <div class="preview-label">Resultado · 600×700 WebP</div>
+      <div class="preview-label" id="resultLabel">Resultado · 600×700 WebP</div>
       <div class="preview-img-wrap">
         <img id="previewResult" src="" alt="Resultado" />
       </div>
@@ -234,9 +295,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!lastRefinedBlob || selectedFiles.length !== 1) return;
     clearTimeout(livePreviewTimer);
     livePreviewTimer = setTimeout(function() {
-      resizeToWebP(lastRefinedBlob).then(function(blob) {
-        previewRes.src = URL.createObjectURL(blob);
-        if (resultBlobs.length === 1) resultBlobs[0].blob = blob;
+      var descs = descEnabled() ? currentDescs() : [];
+      var file = selectedFiles[0];
+      Promise.all([
+        resizeToWebP(lastRefinedBlob),
+        descs.length ? renderDescImage(lastRefinedBlob, descs) : null
+      ]).then(function(res) {
+        resultBlobs = [{ name: 'ImgPromo_' + file.name.replace(/\.[^.]+$/, '') + '.webp', blob: res[0] }];
+        if (res[1]) resultBlobs.push({ name: descName(file), blob: res[1] });
+        previewRes.src = URL.createObjectURL(res[1] || res[0]);
+        resultLabel.textContent = res[1] ? 'Con descripción · 600×700 WebP' : 'Resultado · 600×700 WebP';
       }).catch(function(err) { console.error(err); });
     }, 80);
   }
@@ -1057,6 +1125,298 @@ document.addEventListener('DOMContentLoaded', function() {
     ctx.drawImage(stampImg, sx, sy, sw, sh);
   }
 
+  // ── Imagen promo con descripción ──────────────────────────────────────────
+  // Versión adicional de la imagen promo con hasta 3 descripciones alrededor del
+  // producto, cada una con una flecha curva dibujada a mano (estilo de los ejemplos
+  // Mahou / Dr. Oetker). Las descripciones se leen del campo «DESCRIPCIÓN IMAGEN
+  // PROMO» de la tarea de ClickUp (o se escriben/corrigen a mano en los campos).
+  var descToggle = document.getElementById('descToggle');
+  var descBody   = document.getElementById('descBody');
+  var descHead   = document.getElementById('descHead');
+  var tokenWrap  = document.getElementById('tokenWrap');
+  var cuToken    = document.getElementById('cuToken');
+  var cuLink     = document.getElementById('cuLink');
+  var cuMsg      = document.getElementById('cuMsg');
+  var resultLabel= document.getElementById('resultLabel');
+  var descInputs = [document.getElementById('desc1'), document.getElementById('desc2'), document.getElementById('desc3')];
+  var MAX_DESC = 3;
+  var TOKEN_KEY = 'gelt_clickup_token';
+
+  function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
+  function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
+  function refreshTokenUI() { tokenWrap.style.display = getToken() ? 'none' : 'block'; }
+
+  function descEnabled() { return descToggle.checked; }
+  function currentDescs() {
+    return descInputs.map(function(i) { return i.value.trim(); }).filter(Boolean).slice(0, MAX_DESC);
+  }
+  function setCuMsg(type, msg) { cuMsg.className = 'desc-msg' + (type ? ' ' + type : ''); cuMsg.textContent = msg || ''; }
+
+  descHead.addEventListener('click', function() { descToggle.checked = !descToggle.checked; descToggle.dispatchEvent(new Event('change')); });
+  descToggle.addEventListener('change', function() {
+    descBody.classList.toggle('visible', descToggle.checked);
+    refreshTokenUI();
+    updateLivePreview();
+  });
+  document.getElementById('btnSaveToken').addEventListener('click', function() {
+    var t = cuToken.value.trim();
+    if (!t) return;
+    setToken(t); cuToken.value = ''; refreshTokenUI();
+    if (cuLink.value.trim()) readClickUpTask(); else setCuMsg('ok', '✅ Token guardado');
+  });
+  document.getElementById('btnChangeToken').addEventListener('click', function() { setToken(''); refreshTokenUI(); cuToken.focus(); });
+  document.getElementById('btnReadTask').addEventListener('click', function() { readClickUpTask(); });
+  cuLink.addEventListener('paste', function() { setTimeout(readClickUpTask, 0); });
+  cuLink.addEventListener('keydown', function(e) { if (e.key === 'Enter') readClickUpTask(); });
+  descInputs.forEach(function(i) { i.addEventListener('input', updateLivePreview); });
+
+  // Acepta https://app.clickup.com/t/<id>, /t/<team>/<ID-CUSTOM> o el id suelto
+  function parseTaskRef(raw) {
+    raw = (raw || '').trim();
+    var m = raw.match(/\/t\/(?:(\d+)\/)?([A-Za-z0-9_-]+)/);
+    if (m) return { id: m[2], team: m[1] || null, custom: !!m[1] && /-/.test(m[2]) };
+    if (/^[A-Za-z0-9_-]+$/.test(raw)) return { id: raw, team: null, custom: false };
+    return null;
+  }
+
+  async function fetchTask(ref) {
+    var url = 'https://api.clickup.com/api/v2/task/' + encodeURIComponent(ref.id)
+      + '?include_markdown_description=true&include_subtasks=true'
+      + (ref.custom ? '&custom_task_ids=true&team_id=' + ref.team : '');
+    var r = await fetch(url, { headers: { Authorization: getToken() } });
+    if (r.status === 401) { var e = new Error('token'); e.code = 401; throw e; }
+    if (!r.ok) { var e2 = new Error('http ' + r.status); e2.code = r.status; throw e2; }
+    return r.json();
+  }
+
+  function norm(s) { return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+
+  function cleanLine(s) {
+    return s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')   // enlaces markdown
+            .replace(/\\([_*\[\]()#>+\-.!|])/g, '$1')   // escapes
+            .replace(/(\*\*|__|\x60)/g, '')
+            .replace(/^\s*([-•*·]|\d+[.)])\s+/, '')     // viñetas / numeración
+            .replace(/\s+/g, ' ').trim();
+  }
+
+  // Devuelve null si la tarea no tiene el campo, [] si lo tiene vacío
+  function extractDescs(task) {
+    var md = task.markdown_description || '';
+    var rows = md.split('\n');
+    for (var i = 0; i < rows.length; i++) {
+      var cells = rows[i].split('|');
+      if (cells.length >= 4 && norm(cells[1]).indexOf('DESCRIPCION IMAGEN PROMO') !== -1) {
+        var cell = cells.slice(2, cells.length - 1).join('|');
+        return cell.split(/<br\s*\/?>/i).map(cleanLine).filter(Boolean);
+      }
+    }
+    // Sin tabla: texto plano «DESCRIPCIÓN IMAGEN PROMO» seguido de líneas
+    var txt = task.text_content || md;
+    var lines = txt.split('\n');
+    for (var j = 0; j < lines.length; j++) {
+      var n = norm(lines[j]);
+      var k = n.indexOf('DESCRIPCION IMAGEN PROMO');
+      if (k === -1) continue;
+      var out = [];
+      var rest = lines[j].slice(k + 'DESCRIPCION IMAGEN PROMO'.length).replace(/^[\s:|]+/, '');
+      if (rest) out.push(rest);
+      for (var q = j + 1; q < lines.length; q++) {
+        if (/^(LINK IMAGEN|DESCRIPCION PRODUCTOS)/.test(norm(lines[q]).trim())) break;
+        out.push(lines[q]);
+      }
+      return out.map(cleanLine).filter(Boolean);
+    }
+    return null;
+  }
+
+  var readSeq = 0;
+  async function readClickUpTask() {
+    var ref = parseTaskRef(cuLink.value);
+    if (!ref) { setCuMsg('err', 'Pega el link de la tarea (https://app.clickup.com/t/…)'); return; }
+    if (!getToken()) { refreshTokenUI(); setCuMsg('err', 'Primero guarda tu token de ClickUp'); cuToken.focus(); return; }
+    var seq = ++readSeq;
+    setCuMsg('', '⏳ Leyendo la tarea…');
+    try {
+      var task = await fetchTask(ref);
+      var descs = extractDescs(task);
+      // Si el link es la tarea padre (MONTAJE SET UP), buscar su subtarea IMAGEN PROMO
+      if (!descs && task.subtasks && task.subtasks.length) {
+        var sub = task.subtasks.filter(function(s) { return norm(s.name).indexOf('IMAGEN PROMO') !== -1; })[0];
+        if (sub) { task = await fetchTask({ id: sub.id }); descs = extractDescs(task); }
+      }
+      if (seq !== readSeq) return;
+      if (descs === null) { setCuMsg('err', 'La tarea «' + task.name + '» no tiene el campo DESCRIPCIÓN IMAGEN PROMO'); return; }
+      if (!descs.length) { setCuMsg('err', 'El campo DESCRIPCIÓN IMAGEN PROMO de «' + task.name + '» está vacío. Escríbelas abajo o rellénalo en ClickUp'); return; }
+      descInputs.forEach(function(inp, idx) { inp.value = descs[idx] || ''; });
+      var extra = descs.length > MAX_DESC ? ' (la tarea tiene ' + descs.length + ': uso las 3 primeras)' : '';
+      setCuMsg('ok', '✅ ' + Math.min(descs.length, MAX_DESC) + ' descripciones de «' + task.name + '»' + extra);
+      updateLivePreview();
+    } catch (err) {
+      if (seq !== readSeq) return;
+      console.error(err);
+      if (err.code === 401) { setToken(''); refreshTokenUI(); setCuMsg('err', 'Token de ClickUp no válido. Vuelve a pegarlo'); }
+      else if (err.code === 404 || err.code === 400) setCuMsg('err', 'No encuentro esa tarea. Revisa el link');
+      else if (err.code) setCuMsg('err', 'ClickUp no responde (' + err.code + ')');
+      else setCuMsg('err', 'No se pudo conectar con ClickUp. Revisa tu conexión');
+    }
+  }
+
+  function loadImage(blob) {
+    return new Promise(function(resolve, reject) {
+      var img = new Image();
+      img.onload = function() { resolve(img); };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(blob);
+    });
+  }
+
+  // Caja del producto (píxeles con alfa > 8)
+  function alphaBBox(img) {
+    var c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    var x = c.getContext('2d'); x.drawImage(img, 0, 0);
+    var d = x.getImageData(0, 0, c.width, c.height).data;
+    var minX = c.width, minY = c.height, maxX = -1, maxY = -1;
+    for (var y = 0; y < c.height; y++) for (var xx = 0; xx < c.width; xx++) {
+      if (d[(y * c.width + xx) * 4 + 3] > 8) {
+        if (xx < minX) minX = xx; if (xx > maxX) maxX = xx;
+        if (y < minY) minY = y;  if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < 0) return { x: 0, y: 0, w: img.width, h: img.height };
+    return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  }
+
+  // Escalado progresivo (mitades) de una región de la imagen
+  function scaleRegion(img, r, fw, fh) {
+    var tmp = document.createElement('canvas'); tmp.width = r.w; tmp.height = r.h;
+    var tc = tmp.getContext('2d'); tc.imageSmoothingEnabled = true; tc.imageSmoothingQuality = 'high';
+    tc.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    var cw = r.w, ch = r.h;
+    while (cw > fw * 2 && ch > fh * 2) {
+      var sw = Math.round(cw / 2), sh = Math.round(ch / 2);
+      var st = document.createElement('canvas'); st.width = sw; st.height = sh;
+      var sc = st.getContext('2d'); sc.imageSmoothingEnabled = true; sc.imageSmoothingQuality = 'high';
+      sc.drawImage(tmp, 0, 0, cw, ch, 0, 0, sw, sh);
+      tmp = st; cw = sw; ch = sh;
+    }
+    return { canvas: tmp, w: cw, h: ch };
+  }
+
+  function wrapText(ctx, text, maxW) {
+    var words = text.split(' '), lines = [], line = '';
+    words.forEach(function(w) {
+      var t = line ? line + ' ' + w : w;
+      if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+    });
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  // Flecha curva estilo «dibujada a mano»: curva cuadrática que se abomba hacia
+  // fuera del producto y punta abierta en el extremo de la descripción.
+  function drawArrow(ctx, s, e, away, lw) {
+    var dx = e.x - s.x, dy = e.y - s.y, len = Math.hypot(dx, dy) || 1;
+    var px = -dy / len, py = dx / len;
+    if (px * away.x + py * away.y < 0) { px = -px; py = -py; }
+    var bend = Math.min(60, len * 0.28);
+    var c = { x: (s.x + e.x) / 2 + px * bend, y: (s.y + e.y) / 2 + py * bend };
+    ctx.save();
+    ctx.strokeStyle = '#111111'; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.quadraticCurveTo(c.x, c.y, e.x, e.y); ctx.stroke();
+    var ang = Math.atan2(e.y - c.y, e.x - c.x), hl = lw * 4.2, spread = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(e.x - hl * Math.cos(ang - spread), e.y - hl * Math.sin(ang - spread));
+    ctx.lineTo(e.x, e.y);
+    ctx.lineTo(e.x - hl * Math.cos(ang + spread), e.y - hl * Math.sin(ang + spread));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Composición. Dos maquetas según la forma del producto:
+  //  · «side» (producto alto, p.ej. botella): textos a los lados, a media altura.
+  //  · «top»  (producto ancho/cuadrado, p.ej. sobre o caja): textos arriba y abajo.
+  function descLayout(n, aspect) {
+    var side = aspect >= 1.45;
+    if (side) {
+      var slotsS = {
+        1: [{ cx: 500, cy: 260, dir: 'below', right: true }],
+        2: [{ cx: 500, cy: 250, dir: 'below', right: true }, { cx: 100, cy: 470, dir: 'above', right: false }],
+        3: [{ cx: 500, cy: 160, dir: 'below', right: true }, { cx: 100, cy: 360, dir: 'above', right: false }, { cx: 500, cy: 560, dir: 'above', right: true }]
+      };
+      return { box: { x: 180, y: 25, w: 240, h: 650 }, font: 23, maxW: 170, slots: slotsS[n] };
+    }
+    var TL = { cx: 125, cy: 78, dir: 'below', right: false },
+        TR = { cx: 475, cy: 78, dir: 'below', right: true },
+        BR = { cx: 475, cy: 628, dir: 'above', right: true };
+    var slotsT = { 1: [TR], 2: [TL, BR], 3: [TL, TR, BR] };
+    return { box: { x: 125, y: 170, w: 350, h: 390 }, font: 26, maxW: 225, slots: slotsT[n] };
+  }
+
+  async function renderDescImage(blob, descs) {
+    try { await document.fonts.load('600 26px Poppins'); } catch (e) {}
+    var img = await loadImage(blob);
+    var bb = alphaBBox(img);
+    var L = descLayout(descs.length, bb.h / bb.w);
+    var s = Math.min(L.box.w / bb.w, L.box.h / bb.h);
+    var pw = Math.round(bb.w * s), ph = Math.round(bb.h * s);
+    var P = { x: Math.round(L.box.x + (L.box.w - pw) / 2), y: Math.round(L.box.y + (L.box.h - ph) / 2), w: pw, h: ph };
+
+    var out = document.createElement('canvas'); out.width = TARGET_W; out.height = TARGET_H;
+    var ctx = out.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    var sc = scaleRegion(img, bb, pw, ph);
+    ctx.drawImage(sc.canvas, 0, 0, sc.w, sc.h, P.x, P.y, pw, ph);
+    sharpen(ctx, TARGET_W, TARGET_H);
+
+    var pcx = P.x + P.w / 2, pcy = P.y + P.h / 2;
+    descs.forEach(function(text, i) {
+      var slot = L.slots[i];
+      // Texto: centrado, máx. 4 líneas (reduce el cuerpo si hace falta)
+      var size = L.font, lines;
+      do {
+        ctx.font = '600 ' + size + 'px Poppins, "Source Sans 3", sans-serif';
+        lines = wrapText(ctx, text, L.maxW);
+        if (lines.length <= 4) break;
+        size -= 2;
+      } while (size >= 16);
+      var lh = Math.round(size * 1.22), blockH = lines.length * lh;
+      var top = Math.round(slot.cy - blockH / 2);
+      top = Math.max(12, Math.min(TARGET_H - 12 - blockH, top));
+      ctx.fillStyle = '#111111'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      lines.forEach(function(l, k) { ctx.fillText(l, slot.cx, top + k * lh); });
+      var yt = top, yb = top + blockH;
+
+      // Flecha: de junto al producto hacia la descripción
+      var gap = 18, edgeX = slot.right ? Math.min(P.x + P.w + 20, TARGET_W - 40) : Math.max(P.x - 20, 40);
+      var start, end;
+      if (L.box.y === 25) { // maqueta «side»
+        var span = descs.length === 3 ? 110 : 170; // con 3, flechas más cortas para que no se crucen
+        if (slot.dir === 'below') {
+          end = { x: slot.cx + (slot.right ? -15 : 15), y: yb + gap };
+          start = { x: edgeX, y: Math.min(end.y + span, P.y + P.h - 40) };
+        } else {
+          end = { x: slot.cx + (slot.right ? -15 : 15), y: yt - gap };
+          start = { x: edgeX, y: Math.max(end.y - span, P.y + 40) };
+        }
+      } else {             // maqueta «top»
+        if (slot.dir === 'below') {
+          end = { x: slot.cx + (slot.right ? 10 : -10), y: yb + gap };
+          start = { x: edgeX, y: Math.max(end.y + 120, P.y + P.h * (slot.right ? 0.38 : 0.5)) };
+        } else {
+          end = { x: slot.cx + 10, y: yt - gap };
+          start = { x: edgeX, y: Math.min(end.y - 110, P.y + P.h * 0.62) };
+        }
+      }
+      drawArrow(ctx, start, end, { x: slot.right ? 1 : -1, y: (end.y < pcy ? -0.3 : 0.3) }, 4.5);
+    });
+
+    if (stampImg) drawStamp(ctx, TARGET_W, TARGET_H);
+    return new Promise(function(resolve, reject) {
+      out.toBlob(function(b) { b ? resolve(b) : reject(new Error('toBlob failed')); }, 'image/webp', 1.0);
+    });
+  }
+
+  function descName(file) { return 'ImgPromo_' + file.name.replace(/\.[^.]+$/, '') + '_descripcion.webp'; }
+
   // ── Convertir ─────────────────────────────────────────────────────────────
   window.convertImages = async function() {
     if (!selectedFiles.length) return;
@@ -1065,6 +1425,7 @@ document.addEventListener('DOMContentLoaded', function() {
     btnDownload.style.display = 'none';
     progressWrap.classList.add('visible');
     resultBlobs = [];
+    var descs = descEnabled() ? currentDescs() : [];
 
     // Cargar librería IA (solo la primera vez)
     setStatus('info', '⏳ Cargando modelo IA… (solo la primera vez, ~30s)');
@@ -1139,8 +1500,18 @@ document.addEventListener('DOMContentLoaded', function() {
         var outName = 'ImgPromo_' + file.name.replace(/\.[^.]+$/, '') + '.webp';
         resultBlobs.push({ name: outName, blob: result });
 
+        var descResult = null;
+        if (descs.length) {
+          setStatus('info', pre + 'Añadiendo descripciones…');
+          descResult = await renderDescImage(readyForResize, descs);
+          resultBlobs.push({ name: descName(file), blob: descResult });
+        }
+
         if (isMulti) setItemStatus(i, '✅');
-        else previewRes.src = URL.createObjectURL(result);
+        else {
+          previewRes.src = URL.createObjectURL(descResult || result);
+          resultLabel.textContent = descResult ? 'Con descripción · 600×700 WebP' : 'Resultado · 600×700 WebP';
+        }
 
       } catch(err) {
         console.error(err);
@@ -1151,7 +1522,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     setProgress(100, '¡Listo!');
     if (resultBlobs.length > 0) {
-      setStatus('success', '✅ ' + resultBlobs.length + ' ' + (resultBlobs.length > 1 ? 'imágenes convertidas' : 'imagen convertida') + ' correctamente.');
+      var nImgs = resultBlobs.length - (descs.length ? resultBlobs.length / 2 : 0);
+      setStatus('success', '✅ ' + nImgs + ' ' + (nImgs > 1 ? 'imágenes convertidas' : 'imagen convertida') + ' correctamente'
+        + (descs.length ? (nImgs > 1 ? ', cada una también con descripción' : ', también con descripción') : (descEnabled() ? '. Ojo: «con descripción» está activado pero no hay descripciones' : '')) + '.');
       btnDownload.style.display = 'inline-flex';
     }
     btnConvert.disabled = false;
@@ -1181,6 +1554,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var old = origWrap.querySelector('.preview-placeholder');
     if (old) old.remove();
     previewOrig.style.display = ''; previewOrig.removeAttribute('src'); previewRes.removeAttribute('src');
+    resultLabel.textContent = 'Resultado · 600×700 WebP';
   };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
