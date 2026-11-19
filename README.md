@@ -6,6 +6,20 @@ Herramienta interna para preparar automáticamente las imágenes de producto que
 
 Hoy cada imagen de promo (fotos de producto que llegan de marcas/proveedores en formatos y tamaños dispares) se recorta y adapta a mano al formato que exige la app. Esta herramienta automatiza ese proceso: se sube la imagen original y se descarga ya lista para producción.
 
+## Dos herramientas en la misma web
+
+La web tiene una barra de pestañas arriba con dos páginas:
+
+| Pestaña | Archivo | Para qué |
+|---|---|---|
+| **Conversor de imágenes promo** | `index.html` | Quita el fondo y deja las fotos de producto en WebP 600×700 (lo que describe este README) |
+| **Banners Gana más** | `banners.html` | Genera el banner de Desafío, Encuesta o Premio de la sección «Gana más» (648×367 PNG): se rellena, se adjunta imagen, se elige fondo y se descarga |
+
+Flujo recomendado: convertir primero la foto del producto en el conversor (queda sin fondo) y subir ese archivo a Banners Gana más, que pide PNG/WebP sin fondo.
+
+### Banners Gana más (`banners.html`)
+Es una página autónoma (HTML + JS, sin backend; la tipografía Montserrat ExtraBold y los 6 fondos fijos van incrustados en el propio archivo, por eso pesa ~1 MB). Las reglas de diseño (zona segura, tipografía, composición de productos, sangrado, sombras, avisos) están en `docs/BANNERS_GANA_MAS_PROYECTO.md`; el código de la página es la fuente de verdad. Nombre de la descarga: `Tipo-Marca-MesAño.png`, p. ej. `Encuesta-ColgateKids-Nov26.png`. La caja de la app que se ve en la vista previa nunca se exporta. En la web la descarga usa un enlace estándar (la versión original, un artefacto de Claude, usaba además la API de descargas del entorno; se retiró).
+
 ## Qué hace
 
 1. **Elimina el fondo** de la imagen automáticamente (IA de segmentación, corre en el propio navegador).
@@ -93,6 +107,7 @@ No hace falta revisar ni retocar nada a mano: la herramienta detecta el tipo de 
 | Fecha | Problema detectado | Mejora (automática, sin pasos manuales) |
 |---|---|---|
 | 2026-10-19 | Packagings blancos/crema sobre fondo blanco (bote Valor Cacao Plus): la tapa y los bordes quedaban transparentes ("mordiscos") | Fondo estimado con degradado, exige blanco casi puro, descarta islas y control de calidad de la silueta con estrategias alternativas |
+| 2026-11-19 | Se pide una herramienta para producir los banners de «Gana más» sin pasar por diseño | Nueva pestaña **Banners Gana más** (`banners.html`) a partir del artefacto del equipo, con barra de pestañas común |
 | 2026-11-18 | Salchicha HiVegs envasada al vacío: tira gris fantasma (film + sombra) a un lado del producto | Si el recorte sale deformado y el "núcleo opaco" es compacto y lo sobrante es de bajo contraste, se usa el núcleo (automático) |
 | 2026-11-12 | Caja con media cara blanca sobre fondo blanco (merci Black & White): se perdía la cara blanca, el logo "merci" quedaba como "mec" y desaparecían corazón y texto | Si la muesca es enorme y el envase es rectangular, se completa la silueta con el casco convexo (automático) |
 | 2026-10-20 | Packshots que ya vienen con fondo transparente (Cetaphil WebP): siluetas fantasma blancas y producto más pequeño | Si el borde ya es transparente se usa el alfa original, se borra el alfa residual y se recorta al producto, sin pasar por la IA |
