@@ -1142,7 +1142,9 @@ document.addEventListener('DOMContentLoaded', function() {
   var MAX_DESC = 3;
   var TOKEN_KEY = 'gelt_clickup_token';
 
-  function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
+  // Limpia lo que se cuela al copiar/pegar (espacios, saltos, caracteres invisibles, comillas)
+  function cleanToken(t) { return (t || '').replace(/[^\x21-\x7E]/g, '').replace(/["']/g, ''); }
+  function getToken() { try { return cleanToken(localStorage.getItem(TOKEN_KEY)); } catch (e) { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
   function refreshTokenUI() { tokenWrap.style.display = getToken() ? 'none' : 'block'; }
 
@@ -1159,7 +1161,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateLivePreview();
   });
   document.getElementById('btnSaveToken').addEventListener('click', function() {
-    var t = cuToken.value.trim();
+    var t = cleanToken(cuToken.value);
     if (!t) return;
     setToken(t); cuToken.value = ''; refreshTokenUI();
     if (cuLink.value.trim()) readClickUpTask(); else setCuMsg('ok', '✅ Token guardado');
@@ -1323,7 +1325,7 @@ document.addEventListener('DOMContentLoaded', function() {
     ctx.save();
     ctx.strokeStyle = '#111111'; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.quadraticCurveTo(c.x, c.y, e.x, e.y); ctx.stroke();
-    var ang = Math.atan2(e.y - c.y, e.x - c.x), hl = lw * 4.2, spread = 0.5;
+    var ang = Math.atan2(e.y - c.y, e.x - c.x), hl = lw * 4, spread = 0.55;
     ctx.beginPath();
     ctx.moveTo(e.x - hl * Math.cos(ang - spread), e.y - hl * Math.sin(ang - spread));
     ctx.lineTo(e.x, e.y);
@@ -1332,28 +1334,39 @@ document.addEventListener('DOMContentLoaded', function() {
     ctx.restore();
   }
 
-  // Composición. Dos maquetas según la forma del producto:
-  //  · «side» (producto alto, p.ej. botella): textos a los lados, a media altura.
-  //  · «top»  (producto ancho/cuadrado, p.ej. sobre o caja): textos arriba y abajo.
+  // Composición (según la referencia Kinder):
+  //  · Producto ancho/cuadrado (caja, sobre): producto grande (≈87% del ancho) y
+  //    textos fuera de él: arriba derecha (flecha desde el borde superior),
+  //    abajo izquierda (flecha desde el borde inferior) y, si hay 3, arriba izquierda.
+  //  · Producto alto (botella): textos a los lados, como el ejemplo Mahou.
+  // Copies en Source Sans Pro (Source Sans 3) a 11 pt sobre 300×350 → 22 px en 600×700.
+  var DESC_FONT = 22, DESC_LW = 3;
   function descLayout(n, aspect) {
-    var side = aspect >= 1.45;
-    if (side) {
-      var slotsS = {
-        1: [{ cx: 500, cy: 260, dir: 'below', right: true }],
-        2: [{ cx: 500, cy: 250, dir: 'below', right: true }, { cx: 100, cy: 470, dir: 'above', right: false }],
-        3: [{ cx: 500, cy: 160, dir: 'below', right: true }, { cx: 100, cy: 360, dir: 'above', right: false }, { cx: 500, cy: 560, dir: 'above', right: true }]
+    if (aspect >= 1.45) {
+      var S = {
+        1: [{ k: 'side', cx: 495, cy: 260, dir: 'below', right: true }],
+        2: [{ k: 'side', cx: 495, cy: 250, dir: 'below', right: true }, { k: 'side', cx: 105, cy: 470, dir: 'above', right: false }],
+        3: [{ k: 'side', cx: 495, cy: 160, dir: 'below', right: true }, { k: 'side', cx: 105, cy: 360, dir: 'above', right: false }, { k: 'side', cx: 495, cy: 560, dir: 'above', right: true }]
       };
-      return { box: { x: 180, y: 25, w: 240, h: 650 }, font: 23, maxW: 170, slots: slotsS[n] };
+      return { side: true, box: { x: 175, y: 25, w: 250, h: 650 }, slots: S[n] };
     }
-    var TL = { cx: 125, cy: 78, dir: 'below', right: false },
-        TR = { cx: 475, cy: 78, dir: 'below', right: true },
-        BR = { cx: 475, cy: 628, dir: 'above', right: true };
-    var slotsT = { 1: [TR], 2: [TL, BR], 3: [TL, TR, BR] };
-    return { box: { x: 125, y: 170, w: 350, h: 390 }, font: 26, maxW: 225, slots: slotsT[n] };
+    var T = { 1: ['TR'], 2: ['TR', 'BL'], 3: ['TL', 'TR', 'BL'] };
+    return { side: false, box: { x: 40, y: n === 3 ? 150 : 120, w: 520, h: n === 3 ? 445 : 475 }, slots: T[n].map(function(k) { return { k: k }; }) };
+  }
+
+  function fitLines(ctx, text, maxW) {
+    var size = DESC_FONT, lines;
+    do {
+      ctx.font = '600 ' + size + 'px "Source Sans 3", "Source Sans Pro", sans-serif';
+      lines = wrapText(ctx, text, maxW);
+      if (lines.length <= 3) break;
+      size -= 1;
+    } while (size >= 16);
+    return { lines: lines, lh: Math.round(size * 1.2) };
   }
 
   async function renderDescImage(blob, descs) {
-    try { await document.fonts.load('600 26px Poppins'); } catch (e) {}
+    try { await document.fonts.load('600 22px "Source Sans 3"'); } catch (e) {}
     var img = await loadImage(blob);
     var bb = alphaBBox(img);
     var L = descLayout(descs.length, bb.h / bb.w);
@@ -1366,47 +1379,53 @@ document.addEventListener('DOMContentLoaded', function() {
     var sc = scaleRegion(img, bb, pw, ph);
     ctx.drawImage(sc.canvas, 0, 0, sc.w, sc.h, P.x, P.y, pw, ph);
     sharpen(ctx, TARGET_W, TARGET_H);
+    ctx.fillStyle = '#111111'; ctx.textBaseline = 'top';
 
-    var pcx = P.x + P.w / 2, pcy = P.y + P.h / 2;
+    function drawBlock(f, x, top, align) {
+      ctx.textAlign = align;
+      f.lines.forEach(function(l, k) { ctx.fillText(l, x, top + k * f.lh); });
+    }
+
     descs.forEach(function(text, i) {
-      var slot = L.slots[i];
-      // Texto: centrado, máx. 4 líneas (reduce el cuerpo si hace falta)
-      var size = L.font, lines;
-      do {
-        ctx.font = '600 ' + size + 'px Poppins, "Source Sans 3", sans-serif';
-        lines = wrapText(ctx, text, L.maxW);
-        if (lines.length <= 4) break;
-        size -= 2;
-      } while (size >= 16);
-      var lh = Math.round(size * 1.22), blockH = lines.length * lh;
-      var top = Math.round(slot.cy - blockH / 2);
-      top = Math.max(12, Math.min(TARGET_H - 12 - blockH, top));
-      ctx.fillStyle = '#111111'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      lines.forEach(function(l, k) { ctx.fillText(l, slot.cx, top + k * lh); });
-      var yt = top, yb = top + blockH;
-
-      // Flecha: de junto al producto hacia la descripción
-      var gap = 18, edgeX = slot.right ? Math.min(P.x + P.w + 20, TARGET_W - 40) : Math.max(P.x - 20, 40);
-      var start, end;
-      if (L.box.y === 25) { // maqueta «side»
-        var span = descs.length === 3 ? 110 : 170; // con 3, flechas más cortas para que no se crucen
+      var slot = L.slots[i], f, start, end, away, top;
+      if (slot.k === 'TR') {
+        start = { x: P.x + P.w * 0.5, y: P.y - 10 };
+        end = { x: start.x + 120, y: Math.max(45, P.y - 65) };
+        f = fitLines(ctx, text, TARGET_W - 15 - (end.x + 10));
+        top = Math.max(10, end.y - f.lines.length * f.lh / 2);
+        drawBlock(f, end.x + 10, top, 'left');
+        away = { x: -0.3, y: -1 };
+      } else if (slot.k === 'BL') {
+        start = { x: P.x + P.w * 0.68, y: P.y + P.h + 10 };
+        end = { x: start.x - 120, y: Math.min(TARGET_H - 45, start.y + 75) };
+        f = fitLines(ctx, text, end.x - 10 - 15);
+        top = Math.min(TARGET_H - 10 - f.lines.length * f.lh, end.y - f.lines.length * f.lh / 2);
+        drawBlock(f, end.x - 10, top, 'right');
+        away = { x: 0.3, y: 1 };
+      } else if (slot.k === 'TL') {
+        start = { x: P.x + P.w * 0.2, y: P.y - 10 };
+        end = { x: start.x - 10, y: P.y - 75 };
+        f = fitLines(ctx, text, 210);
+        top = Math.max(10, end.y - 8 - f.lines.length * f.lh);
+        drawBlock(f, Math.max(end.x, 110), top, 'center');
+        away = { x: -1, y: 0 };
+      } else { // botella: textos a los lados
+        f = fitLines(ctx, text, 165);
+        var blockH = f.lines.length * f.lh;
+        top = Math.max(12, Math.min(TARGET_H - 12 - blockH, Math.round(slot.cy - blockH / 2)));
+        drawBlock(f, slot.cx, top, 'center');
+        var yt = top, yb = top + blockH, span = descs.length === 3 ? 110 : 170;
+        var edgeX = slot.right ? Math.min(P.x + P.w + 18, TARGET_W - 40) : Math.max(P.x - 18, 40);
         if (slot.dir === 'below') {
-          end = { x: slot.cx + (slot.right ? -15 : 15), y: yb + gap };
+          end = { x: slot.cx + (slot.right ? -15 : 15), y: yb + 16 };
           start = { x: edgeX, y: Math.min(end.y + span, P.y + P.h - 40) };
         } else {
-          end = { x: slot.cx + (slot.right ? -15 : 15), y: yt - gap };
+          end = { x: slot.cx + (slot.right ? -15 : 15), y: yt - 16 };
           start = { x: edgeX, y: Math.max(end.y - span, P.y + 40) };
         }
-      } else {             // maqueta «top»
-        if (slot.dir === 'below') {
-          end = { x: slot.cx + (slot.right ? 10 : -10), y: yb + gap };
-          start = { x: edgeX, y: Math.max(end.y + 120, P.y + P.h * (slot.right ? 0.38 : 0.5)) };
-        } else {
-          end = { x: slot.cx + 10, y: yt - gap };
-          start = { x: edgeX, y: Math.min(end.y - 110, P.y + P.h * 0.62) };
-        }
+        away = { x: slot.right ? 1 : -1, y: (end.y < P.y + P.h / 2 ? -0.3 : 0.3) };
       }
-      drawArrow(ctx, start, end, { x: slot.right ? 1 : -1, y: (end.y < pcy ? -0.3 : 0.3) }, 4.5);
+      drawArrow(ctx, start, end, away, DESC_LW);
     });
 
     if (stampImg) drawStamp(ctx, TARGET_W, TARGET_H);
